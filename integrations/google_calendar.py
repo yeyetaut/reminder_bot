@@ -101,6 +101,24 @@ def delete_study_events(project_title: str | None = None) -> int:
         return 0
 
 
+def create_deadline_event(title: str, date_str: str, description: str = "") -> str | None:
+    """Create an all-day calendar event for a task deadline. date_str: 'YYYY-MM-DD'."""
+    try:
+        service = build("calendar", "v3", credentials=get_credentials())
+        event = {
+            "summary": title,
+            "description": description,
+            "start": {"date": date_str},
+            "end": {"date": date_str},
+        }
+        created = service.events().insert(calendarId="primary", body=event).execute()
+        logger.info(f"Created deadline event: {title} on {date_str}")
+        return created.get("htmlLink")
+    except Exception as e:
+        logger.error(f"Failed to create deadline event: {e}")
+        return None
+
+
 def create_event(title: str, date_str: str, duration_hours: float = 1.0, description: str = "") -> str | None:
     """Create a calendar event. date_str format: 'YYYY-MM-DD'. Returns event URL or None."""
     try:

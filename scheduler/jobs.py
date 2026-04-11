@@ -118,6 +118,16 @@ async def job_auto_sync(bot, engine):
 
         # No notification — morning digest (7:30) covers new tasks
 
+        # Add new non-calendar tasks to Google Calendar as deadline events
+        from integrations.google_calendar import create_deadline_event
+        for task in new_tasks:
+            if task.source != "google_calendar" and task.due_date:
+                create_deadline_event(
+                    title=task.title,
+                    date_str=task.due_date.isoformat(),
+                    description=task.description or "",
+                )
+
         # Send estimate proposals for new projects (skip if already planned)
         for project in new_projects:
             if task_repo.has_ai_sessions_for_title(project.title):

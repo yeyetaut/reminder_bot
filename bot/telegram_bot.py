@@ -18,7 +18,7 @@ from bot.messages import morning_digest, evening_recap, weekly_overview, monthly
 from bot.conversations import send_proposal, confirm_estimate, adjust_hours, skip_estimate
 from ai.extractor import extract_and_save
 from ai.estimator import estimate_project
-from integrations.google_calendar import fetch_events as fetch_gcal, delete_study_events
+from integrations.google_calendar import fetch_events as fetch_gcal, delete_study_events, create_deadline_event
 from integrations.gmail import fetch_emails
 from integrations.ical_feeds import fetch_canvas_events
 
@@ -33,12 +33,19 @@ def _repos(context: ContextTypes.DEFAULT_TYPE):
 
 
 def _parse_task_ref(args, task_repo: TaskRepo):
-    """Resolve a task number or partial title from command args."""
+    """Resolve a task number or partial title from command args.
+
+    Uses the same merge logic as morning_digest so numbers always match
+    what the user sees in /today.
+    """
     if not args:
         return None
     ref = " ".join(args)
     today = date.today()
-    tasks = task_repo.for_date(today) or task_repo.upcoming(days=7)
+    planned = task_repo.for_date(today)
+    upcoming = task_repo.upcoming(days=7)
+    planned_ids = {t.id for t in planned}
+    tasks = planned + [t for t in upcoming if t.id not in planned_ids]
     # Try as 1-based index first
     if ref.isdigit():
         idx = int(ref) - 1
@@ -147,6 +154,15 @@ async def _run_sync(update, context, days_back: int, label: str):
         lines.append(f"⚠️ *Gmail error:* `{short_err}`")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    # Add new non-calendar tasks to Google Calendar as deadline events
+    for task in new_tasks:
+        if task.source != "google_calendar" and task.due_date:
+            create_deadline_event(
+                title=task.title,
+                date_str=task.due_date.isoformat(),
+                description=task.description or "",
+            )
 
     for project in new_projects:
         if task_repo.has_ai_sessions_for_title(project.title):
