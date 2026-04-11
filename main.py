@@ -36,9 +36,7 @@ def main():
     engine = init_db(config.DATABASE_URL)
     logger.info(f"Database ready at: {config.DATABASE_URL}")
 
-    app = build_bot(engine)
-    app.post_init = post_init
-    app.post_shutdown = post_shutdown
+    app = build_bot(engine, post_init=post_init, post_shutdown=post_shutdown)
 
     logger.info("Polling for Telegram messages...")
     app.run_polling(allowed_updates=["message"])

@@ -1,5 +1,5 @@
 # Telegram
-python-telegram-bot==20.7
+python-telegram-bot==21.3
 
 # Google APIs
 google-api-python-client==2.111.0

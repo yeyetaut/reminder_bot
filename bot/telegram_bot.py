@@ -118,7 +118,7 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     emails, gmail_error = fetch_emails(max_results=30)
     canvas = fetch_canvas_events()
 
-    new_tasks, new_projects = extract_and_save(
+    new_tasks, new_projects, ai_error = extract_and_save(
         calendar_events=gcal + canvas,
         emails=emails,
         task_repo=task_repo,
@@ -126,16 +126,21 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     lines = [
-        "✅ *Sync complete\\!*",
+        "✅ *Sync complete\\!*" if not ai_error else "⚠️ *Sync complete \\(no AI credits\\)*",
         f"• Google Calendar: {len(gcal)} events",
         f"• Canvas: {len(canvas)} events",
-        f"• Gmail: {len(emails)} emails" + (" ⚠️ _error — see below_" if gmail_error else ""),
-        f"• New tasks: {len(new_tasks)}",
+        f"• Gmail: {len(emails)} emails" + (" ⚠️ _error_" if gmail_error else ""),
+        f"• New tasks saved: {len(new_tasks)}",
         f"• New projects: {len(new_projects)}",
     ]
+    if ai_error and "credit" in ai_error.lower():
+        lines.append("\n💳 *Add Gemini credits* at aistudio\\.google\\.com to enable AI task extraction from emails\\.")
+    elif ai_error:
+        short_err = ai_error[:150].replace("_", "\\_").replace("*", "\\*").replace(".", "\\.")
+        lines.append(f"\n⚠️ *AI error:* `{short_err}`")
     if gmail_error:
-        short_err = gmail_error[:200].replace("_", "\\_").replace("*", "\\*")
-        lines.append(f"\n⚠️ *Gmail error:* `{short_err}`")
+        short_err = gmail_error[:150].replace("_", "\\_").replace("*", "\\*").replace(".", "\\.")
+        lines.append(f"⚠️ *Gmail error:* `{short_err}`")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -160,8 +165,13 @@ async def cmd_skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── Bot builder ───────────────────────────────────────────────────────────────
 
-def build_bot(engine) -> Application:
-    app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
+    builder = Application.builder().token(config.TELEGRAM_BOT_TOKEN)
+    if post_init:
+        builder = builder.post_init(post_init)
+    if post_shutdown:
+        builder = builder.post_shutdown(post_shutdown)
+    app = builder.build()
     app.bot_data["engine"] = engine
 
     app.add_handler(CommandHandler("start", cmd_start))
