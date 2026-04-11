@@ -85,11 +85,20 @@ def _filter_new(
     task_repo: TaskRepo,
     project_repo: ProjectRepo,
 ) -> List[Dict[str, Any]]:
-    """Return only items not already stored in the DB."""
+    """Return only items not already stored in the DB.
+
+    Also drops any items whose title starts with '[Study]' — these are
+    Google Calendar events we wrote back ourselves and must never be
+    re-classified as new projects or tasks.
+    """
     new_items = []
     for item in items:
         sid = item.get("source_id", "")
         if not sid:
+            continue
+        title = item.get("title") or ""
+        if _STUDY_PREFIX.match(title):
+            logger.debug(f"  [STUDY SKIP] Ignoring own study event: {title!r}")
             continue
         if not task_repo.exists_by_source_id(sid) and project_repo.get_by_source_id(sid) is None:
             new_items.append(item)

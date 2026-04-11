@@ -122,6 +122,19 @@ class TaskRepo:
             s.execute(update(Task).where(Task.id == task_id).values(status=status))
             s.commit()
 
+    def has_ai_sessions_for_title(self, project_title: str) -> bool:
+        """Return True if study sessions already exist for a project with this title.
+
+        AI study session tasks are titled '<project_title> — <focus>', so a prefix
+        match is exact enough without any fuzzy logic.
+        """
+        with Session(self.engine) as s:
+            return s.scalar(
+                select(Task.id)
+                .where(Task.source == "ai_plan", Task.title.like(project_title + " —%"))
+                .limit(1)
+            ) is not None
+
     def delete_ai_sessions(self, project_id: int) -> int:
         """Delete all AI-planned study sessions for a project. Returns count deleted."""
         with Session(self.engine) as s:

@@ -18,7 +18,7 @@ from bot.messages import morning_digest, evening_recap, weekly_overview, monthly
 from bot.conversations import send_proposal, confirm_estimate, adjust_hours, skip_estimate
 from ai.extractor import extract_and_save
 from ai.estimator import estimate_project
-from integrations.google_calendar import fetch_events as fetch_gcal
+from integrations.google_calendar import fetch_events as fetch_gcal, delete_study_events
 from integrations.gmail import fetch_emails
 from integrations.ical_feeds import fetch_canvas_events
 
@@ -149,6 +149,9 @@ async def _run_sync(update, context, days_back: int, label: str):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
     for project in new_projects:
+        if task_repo.has_ai_sessions_for_title(project.title):
+            logger.info(f"Skipping proposal for '{project.title}' — study sessions already exist")
+            continue
         proposal = estimate_project(project)
         if proposal:
             await send_proposal(context, update.effective_chat.id, proposal)
@@ -186,9 +189,11 @@ async def cmd_clear_study_session(update: Update, context: ContextTypes.DEFAULT_
 
     project = active[idx]
     deleted = task_repo.delete_ai_sessions(project.id)
+    cal_deleted = delete_study_events(project.title)
     project_repo.reset_confirmation(project.id)
     await update.message.reply_text(
-        f"🗑️ Cleared {deleted} study session{'s' if deleted != 1 else ''} for *{project.title}*\\.\n"
+        f"🗑️ Cleared {deleted} study session{'s' if deleted != 1 else ''} for *{project.title}*"
+        f" and {cal_deleted} Google Calendar event{'s' if cal_deleted != 1 else ''}\\.\n"
         "Project reset to unconfirmed — run /sync or /totalsync to re\\-estimate\\.",
         parse_mode="Markdown",
     )
@@ -198,11 +203,12 @@ async def cmd_clear_all_study_sessions(update: Update, context: ContextTypes.DEF
     """Delete all AI-planned study sessions across every project."""
     task_repo, project_repo, _ = _repos(context)
     deleted = task_repo.delete_all_ai_sessions()
-    # Reset confirmation on all projects that had sessions
+    cal_deleted = delete_study_events()  # deletes all [Study] events
     for project in project_repo.list_all():
         project_repo.reset_confirmation(project.id)
     await update.message.reply_text(
-        f"🗑️ Cleared {deleted} study session{'s' if deleted != 1 else ''} across all projects\\.\n"
+        f"🗑️ Cleared {deleted} study session{'s' if deleted != 1 else ''} across all projects"
+        f" and {cal_deleted} Google Calendar event{'s' if cal_deleted != 1 else ''}\\.\n"
         "All projects reset to unconfirmed\\.",
         parse_mode="Markdown",
     )

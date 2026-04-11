@@ -118,14 +118,15 @@ async def job_auto_sync(bot, engine):
 
         # No notification — morning digest (7:30) covers new tasks
 
-        # Send estimate proposals for new projects
+        # Send estimate proposals for new projects (skip if already planned)
         for project in new_projects:
+            if task_repo.has_ai_sessions_for_title(project.title):
+                logger.info(f"Auto-sync: skipping proposal for '{project.title}' — study sessions already exist")
+                continue
             proposal = estimate_project(project)
             if proposal:
-                from bot.conversations import format_proposal_message
                 from ai.estimator import format_proposal_message as fmt
                 text = fmt(proposal)
-                # Store proposal in a simple dict keyed by project id for later confirmation
                 await bot.send_message(
                     chat_id=config.TELEGRAM_CHAT_ID,
                     text=text,
