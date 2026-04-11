@@ -9,14 +9,14 @@ from integrations.google_auth import get_credentials
 
 logger = logging.getLogger(__name__)
 
-# Broad but actionable — catches assignments, deadlines, payments, meetings.
-# Excludes obvious noise sources.
+# Search body + subject — no "subject:" prefix so Gmail searches everywhere.
+# Catches deadlines/payments buried in email bodies, not just headers.
 SEARCH_QUERY = (
     "("
-    "subject:(assignment OR deadline OR \"due date\" OR \"due by\" OR submission OR "
-    "\"action required\" OR \"response required\" OR payment OR invoice OR "
+    "(assignment OR deadline OR \"due date\" OR \"due by\" OR submission OR "
+    "\"action required\" OR \"response required\" OR payment OR invoice OR \"pay by\" OR "
     "meeting OR interview OR appointment OR registration OR \"please confirm\" OR "
-    "reminder OR urgent OR overdue) "
+    "reminder OR urgent OR overdue OR \"balance due\") "
     "OR label:important"
     ") "
     "-label:promotions "
