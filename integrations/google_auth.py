@@ -1,6 +1,6 @@
 """Shared Google OAuth helper — single token covers Calendar + Gmail."""
 import os
-import pickle
+import json
 import logging
 
 from google.oauth2.credentials import Credentials
@@ -24,8 +24,7 @@ def get_credentials() -> Credentials:
     token_path = config.GOOGLE_TOKEN_FILE
 
     if os.path.exists(token_path):
-        with open(token_path, "rb") as f:
-            creds = pickle.load(f)
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
 
     if creds and creds.valid:
         return creds
@@ -38,7 +37,8 @@ def get_credentials() -> Credentials:
         )
         creds = flow.run_local_server(port=0)
 
-    with open(token_path, "wb") as f:
-        pickle.dump(creds, f)
+    # Save as plain JSON — readable, portable, Railway-friendly
+    with open(token_path, "w") as f:
+        f.write(creds.to_json())
 
     return creds
