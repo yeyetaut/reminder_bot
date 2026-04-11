@@ -32,4 +32,4 @@ CANVAS_ICAL_URL: str = os.getenv("CANVAS_ICAL_URL", "")
 TIMEZONE: str = os.getenv("TIMEZONE", "America/New_York")
 
 # Database
-DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:////data/reminder_bot.db")
+DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///reminder_bot.db")
