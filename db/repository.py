@@ -22,16 +22,23 @@ class ProjectRepo:
             return project
 
     def list_unconfirmed(self) -> List[Project]:
+        from sqlalchemy.orm import joinedload
         with Session(self.engine) as s:
-            return list(s.scalars(select(Project).where(Project.confirmed == False)))
+            return list(s.scalars(
+                select(Project)
+                .where(Project.confirmed == False)
+                .options(joinedload(Project.tasks))
+            ))
 
     def list_active(self) -> List[Project]:
-        """Projects with pending tasks."""
+        """Projects with pending tasks (tasks eagerly loaded)."""
+        from sqlalchemy.orm import joinedload
         with Session(self.engine) as s:
             return list(s.scalars(
                 select(Project)
                 .join(Project.tasks)
                 .where(Task.status == TaskStatus.pending)
+                .options(joinedload(Project.tasks))
                 .distinct()
             ))
 
