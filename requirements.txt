@@ -15,7 +15,6 @@ anthropic==0.23.1
 
 # Database
 SQLAlchemy==2.0.25
-psycopg2-binary==2.9.9
 
 # Scheduler
 APScheduler==3.10.4
