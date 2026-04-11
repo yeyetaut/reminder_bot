@@ -1,0 +1,10 @@
+venv/
+.git/
+__pycache__/
+*.pyc
+*.db
+token.json
+credentials.json
+.env
+.DS_Store
+/tmp/
