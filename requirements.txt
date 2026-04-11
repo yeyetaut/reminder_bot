@@ -11,7 +11,7 @@ icalendar==5.0.12
 requests==2.31.0
 
 # AI
-anthropic==0.23.1
+google-generativeai==0.8.3
 
 # Database
 SQLAlchemy==2.0.25

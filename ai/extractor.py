@@ -4,7 +4,7 @@ Task extractor — converts raw calendar events and emails into structured tasks
 Token strategy:
 - Deduplicates by source_id BEFORE hitting the API (already-seen items skipped entirely)
 - Sends only minimal fields (title, date, snippet) — never full bodies
-- Batches ALL new items into a single Haiku call
+- Batches ALL new items into a single Gemini Flash call
 - Returns parsed Task/Project objects ready to save to DB
 """
 import json
@@ -12,7 +12,7 @@ import logging
 from datetime import date
 from typing import List, Dict, Any, Tuple
 
-import anthropic
+import google.generativeai as genai
 
 import config
 from db.models import Task, Project, TaskStatus
@@ -20,7 +20,8 @@ from db.repository import TaskRepo, ProjectRepo
 
 logger = logging.getLogger(__name__)
 
-client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+genai.configure(api_key=config.GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 EXTRACTION_PROMPT = """\
 You are a task extraction assistant. Given a list of calendar events and emails, identify which ones contain actionable tasks or deadlines.
@@ -79,19 +80,17 @@ def _fallback_save(
     task_repo: TaskRepo,
 ) -> Tuple[List[Task], List[Project]]:
     """
-    Save calendar events directly as tasks without AI.
+    Save events/emails directly as tasks without AI.
     Only used when the AI call fails (e.g. no credits).
-    Skips email items — too noisy without AI filtering.
+    Gmail items are included since the search query already filters aggressively.
     """
     saved = []
     for item in items:
-        if item.get("source") == "gmail":
-            continue  # skip emails without AI — too noisy
         sid = item.get("source_id", "")
         if not sid:
             continue
 
-        end_raw = item.get("end") or item.get("start")
+        end_raw = item.get("end") or item.get("start") or item.get("date")
         due = None
         if end_raw:
             try:
@@ -103,7 +102,7 @@ def _fallback_save(
             title=item.get("title", "Untitled"),
             source=item.get("source", "unknown"),
             source_id=sid,
-            description=(item.get("description") or "")[:200],
+            description=(item.get("snippet") or item.get("description") or "")[:200],
             due_date=due,
             scheduled_date=None,
             status=TaskStatus.pending,
@@ -112,7 +111,7 @@ def _fallback_save(
         saved.append(task)
         logger.info(f"  [FALLBACK TASK] {task.title} (due {due})")
 
-    logger.info(f"Fallback: saved {len(saved)} tasks from calendar events")
+    logger.info(f"Fallback: saved {len(saved)} tasks")
     return saved, []
 
 
@@ -121,17 +120,18 @@ def extract_and_save(
     emails: List[Dict[str, Any]],
     task_repo: TaskRepo,
     project_repo: ProjectRepo,
-) -> Tuple[List[Task], List[Project]]:
+) -> Tuple[List[Task], List[Project], str | None]:
     """
     Main entry point. Filters new items, calls AI once, saves results.
-    Returns (new_tasks, new_projects).
+    Returns (new_tasks, new_projects, ai_error_message).
+    ai_error_message is None on success, a string if AI call failed.
     """
     all_items = calendar_events + emails
     new_items = _filter_new(all_items, task_repo, project_repo)
 
     if not new_items:
         logger.info("Extractor: no new items to process")
-        return [], []
+        return [], [], None
 
     logger.info(f"Extractor: {len(all_items)} total items → {len(new_items)} new, sending to AI")
 
@@ -139,21 +139,17 @@ def extract_and_save(
     prompt = EXTRACTION_PROMPT + json.dumps(compact_items, indent=2)
 
     try:
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text.strip()
-        logger.info(f"Extractor: used {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
+        logger.info("Extractor: Gemini call successful")
     except Exception as e:
         logger.error(f"Extractor AI call failed: {e}")
-        logger.info("Falling back to direct calendar save (no AI filtering)")
-        return _fallback_save(new_items, task_repo)
+        logger.info("Falling back to direct save (no AI filtering)")
+        tasks, projects = _fallback_save(new_items, task_repo)
+        return tasks, projects, str(e)
 
     # Parse AI response
     try:
-        # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -161,9 +157,8 @@ def extract_and_save(
         extracted = json.loads(raw)
     except json.JSONDecodeError as e:
         logger.error(f"Extractor: failed to parse AI response: {e}\nRaw: {raw[:300]}")
-        return [], []
+        return [], [], f"JSON parse error: {e}"
 
-    # Build a source_id → original item map to recover source field
     source_map = {i["source_id"]: i for i in new_items}
 
     new_tasks: List[Task] = []
@@ -209,4 +204,4 @@ def extract_and_save(
             logger.info(f"  [TASK]    {task.title} (due {due})")
 
     logger.info(f"Extractor: saved {len(new_tasks)} tasks, {len(new_projects)} projects")
-    return new_tasks, new_projects
+    return new_tasks, new_projects, None

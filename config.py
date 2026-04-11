@@ -15,8 +15,8 @@ def _require(key: str) -> str:
 TELEGRAM_BOT_TOKEN: str = _require("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID: str = _require("TELEGRAM_CHAT_ID")
 
-# Anthropic
-ANTHROPIC_API_KEY: str = _require("ANTHROPIC_API_KEY")
+# Gemini
+GEMINI_API_KEY: str = _require("GEMINI_API_KEY")
 
 # Google
 GOOGLE_CREDENTIALS_FILE: str = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")

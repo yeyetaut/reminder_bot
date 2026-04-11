@@ -1,26 +1,22 @@
 """
-Project estimator — for each unconfirmed project, uses Claude Sonnet to:
+Project estimator — for each unconfirmed project, uses Gemini Flash to:
 1. Estimate total hours required
 2. Propose a daily work schedule between today and the due date
-
-Token strategy:
-- Only called for NEW unconfirmed projects (not re-run on already-estimated ones)
-- One Sonnet call per project (needs reasoning, worth the cost)
-- Compact prompt, structured JSON response
 """
 import json
 import logging
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional, Dict, Any
 
-import anthropic
+import google.generativeai as genai
 
 import config
 from db.models import Project
 
 logger = logging.getLogger(__name__)
 
-client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+genai.configure(api_key=config.GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 ESTIMATION_PROMPT = """\
 You are a student productivity assistant. Given a project's details, estimate the work required and suggest a daily schedule.
@@ -49,7 +45,7 @@ Rules:
 
 def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
     """
-    Call Claude Sonnet to estimate a project. Returns the parsed proposal dict or None on failure.
+    Call Gemini Flash to estimate a project. Returns the parsed proposal dict or None on failure.
     Does NOT save to DB — caller handles confirmation flow.
     """
     today = date.today().isoformat()
@@ -65,16 +61,9 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
     )
 
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text.strip()
-        logger.info(
-            f"Estimator: '{project.title}' — "
-            f"{response.usage.input_tokens} in / {response.usage.output_tokens} out tokens"
-        )
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
+        logger.info(f"Estimator: '{project.title}' — Gemini call successful")
     except Exception as e:
         logger.error(f"Estimator AI call failed for '{project.title}': {e}")
         return None
