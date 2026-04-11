@@ -28,19 +28,23 @@ def _due_label(task: Task) -> str:
 
 def morning_digest(task_repo: TaskRepo) -> str:
     today = date.today()
-    tasks = task_repo.for_date(today)
 
-    if not tasks:
-        # Fall back to upcoming tasks if none explicitly scheduled for today
-        tasks = task_repo.upcoming(days=7)
+    # AI-planned sessions scheduled for today
+    planned = task_repo.for_date(today)
+    # Upcoming deadlines in the next 4 days (includes today)
+    upcoming = task_repo.upcoming(days=4)
 
-    lines = [f"☀️ *Good morning! Here's your plan for {today.strftime('%A, %b %d')}*\n"]
+    # Merge: planned first, then upcoming not already in planned
+    planned_ids = {t.id for t in planned}
+    combined = planned + [t for t in upcoming if t.id not in planned_ids]
 
-    if not tasks:
-        lines.append("No tasks scheduled for today. Enjoy your day! 🎉")
+    lines = [f"☀️ *Good morning\\! Here's your plan for {today.strftime('%A, %b %d')}*\n"]
+
+    if not combined:
+        lines.append("No tasks in the next 4 days\\. Enjoy your day\\! 🎉")
         return "\n".join(lines)
 
-    for i, task in enumerate(tasks, 1):
+    for i, task in enumerate(combined, 1):
         label = _due_label(task)
         lines.append(f"{i}\\. {task.title}{label}")
         if task.description:
@@ -48,8 +52,7 @@ def morning_digest(task_repo: TaskRepo) -> str:
 
     lines += [
         "",
-        f"📋 {len(tasks)} task(s) total",
-        "Use /done <number> to mark complete • /snooze <number> to push to tomorrow",
+        f"📋 {len(combined)} task(s) — use /done <number> or /snooze <number>",
     ]
     return "\n".join(lines)
 

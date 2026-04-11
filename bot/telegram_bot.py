@@ -115,7 +115,7 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔄 Syncing all sources\\.\\.\\.", parse_mode="Markdown")
 
     gcal = fetch_gcal(days_ahead=30)
-    emails = fetch_emails(max_results=20)
+    emails, gmail_error = fetch_emails(max_results=30)
     canvas = fetch_canvas_events()
 
     new_tasks, new_projects = extract_and_save(
@@ -125,14 +125,19 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
         project_repo=project_repo,
     )
 
-    reply = (
-        f"✅ Sync complete\\!\n"
-        f"• {len(gcal + canvas)} calendar events\n"
-        f"• {len(emails)} emails scanned\n"
-        f"• {len(new_tasks)} new task(s) added\n"
-        f"• {len(new_projects)} new project(s) found"
-    )
-    await update.message.reply_text(reply, parse_mode="Markdown")
+    lines = [
+        "✅ *Sync complete\\!*",
+        f"• Google Calendar: {len(gcal)} events",
+        f"• Canvas: {len(canvas)} events",
+        f"• Gmail: {len(emails)} emails" + (" ⚠️ _error — see below_" if gmail_error else ""),
+        f"• New tasks: {len(new_tasks)}",
+        f"• New projects: {len(new_projects)}",
+    ]
+    if gmail_error:
+        short_err = gmail_error[:200].replace("_", "\\_").replace("*", "\\*")
+        lines.append(f"\n⚠️ *Gmail error:* `{short_err}`")
+
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
     # Send estimate proposals for any new projects
     for project in new_projects:

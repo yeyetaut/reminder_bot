@@ -1,7 +1,6 @@
 import logging
 import base64
-import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 from googleapiclient.discovery import build
 
@@ -10,21 +9,21 @@ from integrations.google_auth import get_credentials
 
 logger = logging.getLogger(__name__)
 
-# Only fetch emails that are likely actionable — deadlines, payments, meetings, important alerts.
-# Excludes promotions, newsletters, social updates, and automated notifications.
+# Broad but actionable — catches assignments, deadlines, payments, meetings.
+# Excludes obvious noise sources.
 SEARCH_QUERY = (
     "("
-    "subject:(deadline OR \"due date\" OR \"due by\" OR overdue OR payment OR invoice OR \"pay by\" OR \"action required\" OR \"response required\" OR \"your response\" OR meeting OR interview OR appointment OR reminder OR urgent OR important OR submission OR \"sign up\" OR registration OR \"confirm your\" OR \"please confirm\") "
+    "subject:(assignment OR deadline OR \"due date\" OR \"due by\" OR submission OR "
+    "\"action required\" OR \"response required\" OR payment OR invoice OR "
+    "meeting OR interview OR appointment OR registration OR \"please confirm\" OR "
+    "reminder OR urgent OR overdue) "
     "OR label:important"
     ") "
     "-label:promotions "
     "-label:social "
-    "-label:updates "
-    "-label:forums "
-    "-from:noreply "
-    "-from:no-reply "
-    "-from:donotreply "
-    "newer_than:30d"
+    "-from:noreply@* "
+    "-from:no-reply@* "
+    "newer_than:14d"
 )
 
 
@@ -41,8 +40,11 @@ def _decode_body(payload: Dict) -> str:
     return body
 
 
-def fetch_emails(max_results: int = 50) -> List[Dict[str, Any]]:
-    """Return recent emails likely related to tasks or deadlines."""
+def fetch_emails(max_results: int = 30) -> Tuple[List[Dict[str, Any]], str | None]:
+    """
+    Return (emails, error_message).
+    error_message is None on success, a string describing the failure otherwise.
+    """
     try:
         service = build("gmail", "v1", credentials=get_credentials())
 
@@ -77,11 +79,11 @@ def fetch_emails(max_results: int = 50) -> List[Dict[str, Any]]:
                 "sender": sender,
                 "date": date_str,
                 "snippet": snippet,
-                "body": body[:2000],  # cap body length sent to AI
+                "body": body[:1500],
             })
 
-        return parsed
+        return parsed, None
 
     except Exception as e:
         logger.error(f"Gmail fetch failed: {e}")
-        return []
+        return [], str(e)
