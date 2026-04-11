@@ -103,7 +103,7 @@ async def job_auto_sync(bot, engine):
 
     try:
         gcal = fetch_gcal(days_ahead=30)
-        emails, _ = fetch_emails(max_results=30)
+        emails, _ = fetch_emails(max_results=30, days_back=1)
         canvas = fetch_canvas_events()
 
         task_repo = TaskRepo(engine)

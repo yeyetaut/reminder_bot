@@ -60,7 +60,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Commands:\n"
         "/today — today's task list\n"
         "/projects — active projects\n"
-        "/sync — fetch latest from all sources\n"
+        "/sync — fetch today's new emails\n"
+        "/totalsync — full sync \\(last 14 days of emails \\+ 30 days calendar\\)\n"
         "/done <number\\|title> — mark a task complete\n"
         "/snooze <number\\|title> — push task to tomorrow\n"
         "/weekly — weekly overview\n"
@@ -110,12 +111,13 @@ async def cmd_snooze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"⏭️ Snoozed to tomorrow: *{task.title}*", parse_mode="Markdown")
 
 
-async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _run_sync(update, context, days_back: int, label: str):
+    """Shared sync logic. days_back controls Gmail lookback window."""
     task_repo, project_repo, _ = _repos(context)
-    await update.message.reply_text("🔄 Syncing all sources\\.\\.\\.", parse_mode="Markdown")
+    await update.message.reply_text(f"🔄 {label}", parse_mode="Markdown")
 
     gcal = fetch_gcal(days_ahead=30)
-    emails, gmail_error = fetch_emails(max_results=30)
+    emails, gmail_error = fetch_emails(max_results=30, days_back=days_back)
     canvas = fetch_canvas_events()
 
     new_tasks, new_projects, ai_error = extract_and_save(
@@ -144,11 +146,20 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
-    # Send estimate proposals for any new projects
     for project in new_projects:
         proposal = estimate_project(project)
         if proposal:
             await send_proposal(context, update.effective_chat.id, proposal)
+
+
+async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Light daily sync — only today's emails \\+ calendar."""
+    await _run_sync(update, context, days_back=1, label="Syncing today's emails\\.\\.\\.")
+
+
+async def cmd_total_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Full sync — 14 days of emails \\+ 30 days calendar."""
+    await _run_sync(update, context, days_back=14, label="Syncing all sources\\.\\.\\.")
 
 
 async def cmd_confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -182,6 +193,7 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("done", cmd_done))
     app.add_handler(CommandHandler("snooze", cmd_snooze))
     app.add_handler(CommandHandler("sync", cmd_sync))
+    app.add_handler(CommandHandler("totalsync", cmd_total_sync))
     app.add_handler(CommandHandler("confirm_estimate", cmd_confirm_estimate))
     app.add_handler(CommandHandler("adjust_hours", cmd_adjust_hours))
     app.add_handler(CommandHandler("skip_estimate", cmd_skip_estimate))

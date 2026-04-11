@@ -42,6 +42,10 @@ class ProjectRepo:
                 .distinct()
             ))
 
+    def list_all(self) -> List[Project]:
+        with Session(self.engine) as s:
+            return list(s.scalars(select(Project)))
+
     def confirm(self, project_id: int, estimated_hours: float) -> None:
         with Session(self.engine) as s:
             s.execute(

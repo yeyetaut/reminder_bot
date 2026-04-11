@@ -12,6 +12,7 @@ AI fallback chain: Claude Haiku → Gemini 2.0 Flash → Gemini 1.5 Flash → di
 import json
 import logging
 from datetime import date
+from difflib import SequenceMatcher
 from typing import List, Dict, Any, Tuple
 
 import config
@@ -54,6 +55,17 @@ def _compact(item: Dict[str, Any]) -> Dict[str, Any]:
         "snippet": (item.get("snippet") or item.get("description") or "")[:150],
         "source": item.get("source", ""),
     }
+
+
+def _is_duplicate_project(title: str, project_repo: ProjectRepo) -> bool:
+    """Return True if an existing project has a similar title (>=72% similarity)."""
+    normalized = title.lower().strip()
+    for existing in project_repo.list_all():
+        ratio = SequenceMatcher(None, normalized, existing.title.lower().strip()).ratio()
+        if ratio >= 0.72:
+            logger.info(f"  [DUP SKIP] '{title}' matches existing '{existing.title}' ({ratio:.2f})")
+            return True
+    return False
 
 
 def _filter_new(
@@ -228,8 +240,12 @@ def extract_and_save(
                 pass
 
         if entry.get("is_project"):
+            proj_title = entry.get("title", "Untitled project")
+            if _is_duplicate_project(proj_title, project_repo):
+                logger.info(f"  [DUP DROP] Skipping project '{proj_title}' — already exists")
+                continue
             project = Project(
-                title=entry.get("title", "Untitled project"),
+                title=proj_title,
                 source=source,
                 source_id=sid,
                 description=entry.get("description", ""),

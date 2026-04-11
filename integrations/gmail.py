@@ -9,9 +9,7 @@ from integrations.google_auth import get_credentials
 
 logger = logging.getLogger(__name__)
 
-# Search body + subject — no "subject:" prefix so Gmail searches everywhere.
-# Catches deadlines/payments buried in email bodies, not just headers.
-SEARCH_QUERY = (
+_BASE_QUERY = (
     "("
     "assignment OR deadline OR \"due date\" OR \"due by\" OR submission OR "
     "\"action required\" OR \"response required\" OR payment OR invoice OR \"pay by\" OR "
@@ -26,8 +24,11 @@ SEARCH_QUERY = (
     "-subject:\"build failed\" "
     "-subject:\"deployment\" "
     "-subject:\"order confirmation\" "
-    "newer_than:14d"
 )
+
+
+def _build_query(days_back: int) -> str:
+    return _BASE_QUERY + f"newer_than:{days_back}d"
 
 
 def _decode_body(payload: Dict) -> str:
@@ -43,9 +44,10 @@ def _decode_body(payload: Dict) -> str:
     return body
 
 
-def fetch_emails(max_results: int = 30) -> Tuple[List[Dict[str, Any]], str | None]:
+def fetch_emails(max_results: int = 30, days_back: int = 14) -> Tuple[List[Dict[str, Any]], str | None]:
     """
     Return (emails, error_message).
+    days_back controls how far back to search (default 14 for full sync, use 1 for daily sync).
     error_message is None on success, a string describing the failure otherwise.
     """
     try:
@@ -53,7 +55,7 @@ def fetch_emails(max_results: int = 30) -> Tuple[List[Dict[str, Any]], str | Non
 
         results = service.users().messages().list(
             userId="me",
-            q=SEARCH_QUERY,
+            q=_build_query(days_back),
             maxResults=max_results,
         ).execute()
 

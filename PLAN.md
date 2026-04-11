@@ -12,8 +12,8 @@ Build a personal productivity bot that aggregates tasks and deadlines from multi
 | 2 | Calendar/email integrations | ✅ Complete |
 | 3 | AI layer (extraction + estimation) | ✅ Complete |
 | 4 | Telegram bot (commands + confirmation flow) | ✅ Complete |
-| 5 | Scheduler (automated digests) | 🔲 Next |
-| 6 | Deployment setup (VPS) | 🔲 Pending |
+| 5 | Scheduler (automated digests) | ✅ Complete |
+| 6 | Deployment (Railway) | ✅ Complete |
 
 ---
 
@@ -93,46 +93,61 @@ tail -f /tmp/reminder_bot.log
 
 ---
 
-## Phase 5 — Scheduler (Next) 🔲
+## Phase 5 — Scheduler ✅
 
-### Goals
-- Send automated digests without user triggering them
-
-### File to create
-- `scheduler/jobs.py` — APScheduler cron jobs
+### File
+- `scheduler/jobs.py` — APScheduler cron jobs wired to `TIMEZONE` env var
 
 ### Schedule
 | Job | Trigger | Content |
 |-----|---------|---------|
+| Auto-sync | Daily 7:00 AM | Re-fetch all sources |
 | Morning digest | Daily 7:30 AM | Today's tasks ordered by deadline |
 | Evening recap | Daily 9:00 PM | Done/skipped recap + tomorrow preview |
 | Weekly overview | Friday 9:00 PM | Week summary + next week big items |
-| Monthly overview | Last calendar day 9:00 PM | Month recap + upcoming deadlines |
-
-### Deliverable
-All 4 jobs registered at startup; manually invoking each sends correct Telegram message.
+| Monthly overview | Last calendar day 9:30 PM | Month recap + upcoming deadlines |
 
 ---
 
-## Phase 6 — Deployment (VPS) 🔲
+## Recent Fixes (2026-04-12)
 
-### Goals
-- Run bot persistently on a Linux VPS
+### Duplicate project detection
+- `ai/extractor.py`: Before saving a new project, checks if any existing project has ≥72% title similarity (`difflib.SequenceMatcher`). Duplicates from study-segment emails are silently dropped.
+- `db/repository.py`: Added `ProjectRepo.list_all()` to support the title comparison.
 
-### Steps
-1. Copy project to VPS, create `venv`, install deps
-2. Copy `.env`, `credentials.json`, `token.json` to VPS
-3. Install systemd service:
-```ini
-[Unit]
-Description=Reminder Bot
-[Service]
-WorkingDirectory=/opt/reminder_bot
-ExecStart=/opt/reminder_bot/venv/bin/python main.py
-Restart=always
-[Install]
-WantedBy=multi-user.target
-```
+### Multi-project pending proposals
+- `bot/conversations.py`: Pending proposals stored as a list. When multiple projects are detected at once, all are queued and labeled `[Project N]`.
+- `/confirm_estimate [index]`, `/adjust_hours [index] <hours>`, `/skip_estimate [index]` now accept an optional 1-based index to target any pending project. Default is project 1 (oldest).
+- After confirming/skipping, the bot notifies the user if more proposals remain.
+
+### Split /sync into daily vs. full
+- `/sync` → today's emails only (`newer_than:1d`) + calendar. Fast daily check.
+- `/totalsync` → full sync: 14 days of emails + 30 days calendar (old `/sync` behavior).
+- 7 AM auto-sync job also uses the 1-day email filter.
+
+---
+
+## Phase 6 — Deployment (Railway) ✅
+
+### Platform
+Deployed on [Railway](https://railway.com) as a persistent worker service.
+
+### Key files
+- `railway.json` — `startCommand: python main.py`, restart on failure
+- `Procfile` — `worker: python main.py`
+- `.railwayignore` — excludes `venv/`, `*.db`, `token.json`, `credentials.json`, `.env`
+- `startup.py` — decodes `GOOGLE_CREDENTIALS_B64` → `credentials.json` and `GOOGLE_TOKEN_B64` → `token.json` at startup
+
+### Railway environment variables required
+| Variable | Notes |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | from @BotFather |
+| `TELEGRAM_CHAT_ID` | your chat ID |
+| `ANTHROPIC_API_KEY` | Anthropic console |
+| `GOOGLE_CREDENTIALS_B64` | `base64 -i credentials.json \| tr -d '\n'` |
+| `GOOGLE_TOKEN_B64` | `base64 -i token.json \| tr -d '\n'` (run OAuth locally first) |
+| `CANVAS_ICAL_URL` | Canvas calendar feed URL |
+| `TIMEZONE` | e.g. `Asia/Singapore` |
 
 ---
 
