@@ -12,7 +12,7 @@ import logging
 from datetime import date
 from typing import List, Dict, Any, Tuple
 
-import google.generativeai as genai
+from google import genai
 
 import config
 from db.models import Task, Project, TaskStatus
@@ -20,8 +20,8 @@ from db.repository import TaskRepo, ProjectRepo
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=config.GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+_client = genai.Client(api_key=config.GEMINI_API_KEY)
+_MODEL = "gemini-2.0-flash"
 
 EXTRACTION_PROMPT = """\
 You are a task extraction assistant. Given a list of calendar events and emails, identify which ones contain actionable tasks or deadlines.
@@ -139,7 +139,7 @@ def extract_and_save(
     prompt = EXTRACTION_PROMPT + json.dumps(compact_items, indent=2)
 
     try:
-        response = model.generate_content(prompt)
+        response = _client.models.generate_content(model=_MODEL, contents=prompt)
         raw = response.text.strip()
         logger.info("Extractor: Gemini call successful")
     except Exception as e:

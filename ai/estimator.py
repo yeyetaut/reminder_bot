@@ -8,15 +8,15 @@ import logging
 from datetime import date
 from typing import Optional, Dict, Any
 
-import google.generativeai as genai
+from google import genai
 
 import config
 from db.models import Project
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=config.GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+_client = genai.Client(api_key=config.GEMINI_API_KEY)
+_MODEL = "gemini-2.0-flash"
 
 ESTIMATION_PROMPT = """\
 You are a student productivity assistant. Given a project's details, estimate the work required and suggest a daily schedule.
@@ -61,7 +61,7 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
     )
 
     try:
-        response = model.generate_content(prompt)
+        response = _client.models.generate_content(model=_MODEL, contents=prompt)
         raw = response.text.strip()
         logger.info(f"Estimator: '{project.title}' — Gemini call successful")
     except Exception as e:
