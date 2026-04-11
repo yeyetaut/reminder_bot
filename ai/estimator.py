@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 _MODEL = "gemini-2.0-flash"
+_FALLBACK_MODEL = "gemini-1.5-flash"
 
 ESTIMATION_PROMPT = """\
 You are a student productivity assistant. Given a project's details, estimate the work required and suggest a daily schedule.
@@ -65,8 +66,18 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
         raw = response.text.strip()
         logger.info(f"Estimator: '{project.title}' — Gemini call successful")
     except Exception as e:
-        logger.error(f"Estimator AI call failed for '{project.title}': {e}")
-        return None
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            logger.warning(f"Estimator: {_MODEL} quota exhausted, trying {_FALLBACK_MODEL}")
+            try:
+                response = _client.models.generate_content(model=_FALLBACK_MODEL, contents=prompt)
+                raw = response.text.strip()
+                logger.info(f"Estimator: '{project.title}' — {_FALLBACK_MODEL} call successful")
+            except Exception as e2:
+                logger.error(f"Estimator AI call failed on both models for '{project.title}': {e2}")
+                return None
+        else:
+            logger.error(f"Estimator AI call failed for '{project.title}': {e}")
+            return None
 
     try:
         if raw.startswith("```"):

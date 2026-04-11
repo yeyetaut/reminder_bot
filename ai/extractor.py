@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 _MODEL = "gemini-2.0-flash"
+_FALLBACK_MODEL = "gemini-1.5-flash"
 
 EXTRACTION_PROMPT = """\
 You are a task extraction assistant. Given a list of calendar events and emails, identify which ones contain actionable tasks or deadlines.
@@ -143,10 +144,22 @@ def extract_and_save(
         raw = response.text.strip()
         logger.info("Extractor: Gemini call successful")
     except Exception as e:
-        logger.error(f"Extractor AI call failed: {e}")
-        logger.info("Falling back to direct save (no AI filtering)")
-        tasks, projects = _fallback_save(new_items, task_repo)
-        return tasks, projects, str(e)
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            logger.warning(f"Extractor: {_MODEL} quota exhausted, trying {_FALLBACK_MODEL}")
+            try:
+                response = _client.models.generate_content(model=_FALLBACK_MODEL, contents=prompt)
+                raw = response.text.strip()
+                logger.info(f"Extractor: {_FALLBACK_MODEL} call successful")
+            except Exception as e2:
+                logger.error(f"Extractor AI call failed on both models: {e2}")
+                logger.info("Falling back to direct save (no AI filtering)")
+                tasks, projects = _fallback_save(new_items, task_repo)
+                return tasks, projects, str(e2)
+        else:
+            logger.error(f"Extractor AI call failed: {e}")
+            logger.info("Falling back to direct save (no AI filtering)")
+            tasks, projects = _fallback_save(new_items, task_repo)
+            return tasks, projects, str(e)
 
     # Parse AI response
     try:

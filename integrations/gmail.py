@@ -13,16 +13,19 @@ logger = logging.getLogger(__name__)
 # Catches deadlines/payments buried in email bodies, not just headers.
 SEARCH_QUERY = (
     "("
-    "(assignment OR deadline OR \"due date\" OR \"due by\" OR submission OR "
+    "assignment OR deadline OR \"due date\" OR \"due by\" OR submission OR "
     "\"action required\" OR \"response required\" OR payment OR invoice OR \"pay by\" OR "
-    "meeting OR interview OR appointment OR registration OR \"please confirm\" OR "
-    "reminder OR urgent OR overdue OR \"balance due\") "
-    "OR label:important"
+    "appointment OR registration OR \"please confirm\" OR "
+    "overdue OR \"balance due\""
     ") "
     "-label:promotions "
     "-label:social "
-    "-from:noreply@* "
-    "-from:no-reply@* "
+    "-label:updates "
+    "-subject:\"thank you for applying\" "
+    "-subject:\"application received\" "
+    "-subject:\"build failed\" "
+    "-subject:\"deployment\" "
+    "-subject:\"order confirmation\" "
     "newer_than:14d"
 )
 
