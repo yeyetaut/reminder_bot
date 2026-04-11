@@ -17,12 +17,12 @@ def prepare_google_credentials():
     creds_b64 = os.getenv("GOOGLE_CREDENTIALS_B64")
     token_b64 = os.getenv("GOOGLE_TOKEN_B64")
 
-    if creds_b64 and not os.path.exists(config.GOOGLE_CREDENTIALS_FILE):
+    if creds_b64:
         with open(config.GOOGLE_CREDENTIALS_FILE, "wb") as f:
             f.write(base64.b64decode(creds_b64))
         logger.info("Wrote credentials.json from GOOGLE_CREDENTIALS_B64")
 
-    if token_b64 and not os.path.exists(config.GOOGLE_TOKEN_FILE):
-        with open(config.GOOGLE_TOKEN_FILE, "wb") as f:
-            f.write(base64.b64decode(token_b64))
+    if token_b64:
+        with open(config.GOOGLE_TOKEN_FILE, "w") as f:
+            f.write(base64.b64decode(token_b64).decode("utf-8"))
         logger.info("Wrote token.json from GOOGLE_TOKEN_B64")
