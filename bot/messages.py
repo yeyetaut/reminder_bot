@@ -32,7 +32,7 @@ def morning_digest(task_repo: TaskRepo) -> str:
 
     if not tasks:
         # Fall back to upcoming tasks if none explicitly scheduled for today
-        tasks = task_repo.upcoming(days=3)
+        tasks = task_repo.upcoming(days=7)
 
     lines = [f"☀️ *Good morning! Here's your plan for {today.strftime('%A, %b %d')}*\n"]
 

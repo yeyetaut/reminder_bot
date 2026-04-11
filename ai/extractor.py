@@ -52,7 +52,7 @@ def _compact(item: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "source_id": item.get("source_id", ""),
         "title": (item.get("title") or "")[:120],
-        "date": (item.get("end") or item.get("start") or "")[:20],
+        "date": (item.get("end") or item.get("start") or item.get("date") or "")[:30],
         "snippet": (item.get("snippet") or item.get("description") or "")[:150],
         "source": item.get("source", ""),
     }
@@ -105,7 +105,7 @@ def _fallback_save(
             source_id=sid,
             description=(item.get("description") or "")[:200],
             due_date=due,
-            scheduled_date=due,
+            scheduled_date=None,
             status=TaskStatus.pending,
         )
         task_repo.save(task)
@@ -201,7 +201,7 @@ def extract_and_save(
                 source_id=sid,
                 description=entry.get("description", ""),
                 due_date=due,
-                scheduled_date=due,
+                scheduled_date=None,
                 status=TaskStatus.pending,
             )
             task_repo.save(task)

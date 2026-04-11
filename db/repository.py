@@ -48,6 +48,18 @@ class ProjectRepo:
 class TaskRepo:
     def __init__(self, engine: Engine):
         self.engine = engine
+        self._migrate_scheduled_dates()
+
+    def _migrate_scheduled_dates(self) -> None:
+        """One-time fix: clear scheduled_date for non-AI-planned tasks so they
+        appear via due_date-based upcoming() queries instead of for_date()."""
+        with Session(self.engine) as s:
+            s.execute(
+                update(Task)
+                .where(Task.source != "ai_plan", Task.scheduled_date != None)
+                .values(scheduled_date=None)
+            )
+            s.commit()
 
     def exists_by_source_id(self, source_id: str) -> bool:
         with Session(self.engine) as s:

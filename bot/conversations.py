@@ -60,14 +60,16 @@ async def confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     sessions = proposal.get("daily_sessions", [])
 
     # Save daily task sessions
+    from datetime import date as date_type
     tasks = []
     for session in sessions:
+        session_date = date_type.fromisoformat(session["date"]) if isinstance(session["date"], str) else session["date"]
         task = Task(
             project_id=project_id,
             title=f"{proposal['project_title']} — {session['focus']}",
             description=session["focus"],
-            scheduled_date=session["date"],
-            due_date=session["date"],
+            scheduled_date=session_date,
+            due_date=session_date,
             source="ai_plan",
             status=TaskStatus.pending,
         )
