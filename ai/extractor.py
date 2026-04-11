@@ -11,6 +11,7 @@ AI fallback chain: Claude Haiku → Gemini 2.0 Flash → Gemini 1.5 Flash → di
 """
 import json
 import logging
+import re
 from datetime import date
 from difflib import SequenceMatcher
 from typing import List, Dict, Any, Tuple
@@ -57,11 +58,22 @@ def _compact(item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+_STUDY_PREFIX = re.compile(r'^\[study\]\s*', re.IGNORECASE)
+
+
+def _normalize_title(title: str) -> str:
+    """Strip [study] prefix and lowercase for comparison."""
+    return _STUDY_PREFIX.sub("", title).lower().strip()
+
+
 def _is_duplicate_project(title: str, project_repo: ProjectRepo) -> bool:
-    """Return True if an existing project has a similar title (>=72% similarity)."""
-    normalized = title.lower().strip()
+    """Return True if an existing project has a similar title (>=72% similarity).
+    Strips [study] prefixes before comparing so calendar study sessions
+    don't re-trigger proposals for already-known projects.
+    """
+    normalized = _normalize_title(title)
     for existing in project_repo.list_all():
-        ratio = SequenceMatcher(None, normalized, existing.title.lower().strip()).ratio()
+        ratio = SequenceMatcher(None, normalized, _normalize_title(existing.title)).ratio()
         if ratio >= 0.72:
             logger.info(f"  [DUP SKIP] '{title}' matches existing '{existing.title}' ({ratio:.2f})")
             return True

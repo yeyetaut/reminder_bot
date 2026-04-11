@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from typing import Optional, List
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, select, update, delete
 from sqlalchemy.orm import Session
 
 from db.models import Project, Task, TaskStatus, DailyPlan
@@ -52,6 +52,16 @@ class ProjectRepo:
                 update(Project)
                 .where(Project.id == project_id)
                 .values(confirmed=True, estimated_hours=estimated_hours)
+            )
+            s.commit()
+
+    def reset_confirmation(self, project_id: int) -> None:
+        """Reset a project to unconfirmed so it can be re-estimated."""
+        with Session(self.engine) as s:
+            s.execute(
+                update(Project)
+                .where(Project.id == project_id)
+                .values(confirmed=False, estimated_hours=None)
             )
             s.commit()
 
@@ -111,6 +121,23 @@ class TaskRepo:
         with Session(self.engine) as s:
             s.execute(update(Task).where(Task.id == task_id).values(status=status))
             s.commit()
+
+    def delete_ai_sessions(self, project_id: int) -> int:
+        """Delete all AI-planned study sessions for a project. Returns count deleted."""
+        with Session(self.engine) as s:
+            result = s.execute(
+                delete(Task)
+                .where(Task.project_id == project_id, Task.source == "ai_plan")
+            )
+            s.commit()
+            return result.rowcount
+
+    def delete_all_ai_sessions(self) -> int:
+        """Delete all AI-planned study sessions across all projects. Returns count deleted."""
+        with Session(self.engine) as s:
+            result = s.execute(delete(Task).where(Task.source == "ai_plan"))
+            s.commit()
+            return result.rowcount
 
     def upcoming(self, days: int = 7) -> List[Task]:
         from datetime import timedelta

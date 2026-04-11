@@ -64,6 +64,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/totalsync — full sync \\(last 14 days of emails \\+ 30 days calendar\\)\n"
         "/done <number\\|title> — mark a task complete\n"
         "/snooze <number\\|title> — push task to tomorrow\n"
+        "/clear\\_study\\_session <number> — remove study sessions for a project\n"
+        "/clear\\_all\\_study\\_sessions — remove all study sessions\n"
         "/weekly — weekly overview\n"
         "/monthly — monthly overview",
         parse_mode="Markdown",
@@ -162,6 +164,50 @@ async def cmd_total_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _run_sync(update, context, days_back=14, label="Syncing all sources\\.\\.\\.")
 
 
+async def cmd_clear_study_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Delete study sessions for a specific project by its list index (/projects numbering)."""
+    task_repo, project_repo, _ = _repos(context)
+    active = project_repo.list_active()
+
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text(
+            "Usage: /clear\\_study\\_session <number>  \\(use /projects to see numbers\\)",
+            parse_mode="Markdown",
+        )
+        return
+
+    idx = int(context.args[0]) - 1
+    if idx < 0 or idx >= len(active):
+        await update.message.reply_text(
+            f"Invalid number\\. There are {len(active)} active projects\\. Use /projects to see them\\.",
+            parse_mode="Markdown",
+        )
+        return
+
+    project = active[idx]
+    deleted = task_repo.delete_ai_sessions(project.id)
+    project_repo.reset_confirmation(project.id)
+    await update.message.reply_text(
+        f"🗑️ Cleared {deleted} study session{'s' if deleted != 1 else ''} for *{project.title}*\\.\n"
+        "Project reset to unconfirmed — run /sync or /totalsync to re\\-estimate\\.",
+        parse_mode="Markdown",
+    )
+
+
+async def cmd_clear_all_study_sessions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Delete all AI-planned study sessions across every project."""
+    task_repo, project_repo, _ = _repos(context)
+    deleted = task_repo.delete_all_ai_sessions()
+    # Reset confirmation on all projects that had sessions
+    for project in project_repo.list_all():
+        project_repo.reset_confirmation(project.id)
+    await update.message.reply_text(
+        f"🗑️ Cleared {deleted} study session{'s' if deleted != 1 else ''} across all projects\\.\n"
+        "All projects reset to unconfirmed\\.",
+        parse_mode="Markdown",
+    )
+
+
 async def cmd_confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await confirm_estimate(update, context)
 
@@ -194,6 +240,8 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("snooze", cmd_snooze))
     app.add_handler(CommandHandler("sync", cmd_sync))
     app.add_handler(CommandHandler("totalsync", cmd_total_sync))
+    app.add_handler(CommandHandler("clear_study_session", cmd_clear_study_session))
+    app.add_handler(CommandHandler("clear_all_study_sessions", cmd_clear_all_study_sessions))
     app.add_handler(CommandHandler("confirm_estimate", cmd_confirm_estimate))
     app.add_handler(CommandHandler("adjust_hours", cmd_adjust_hours))
     app.add_handler(CommandHandler("skip_estimate", cmd_skip_estimate))
