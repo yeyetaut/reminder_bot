@@ -15,8 +15,11 @@ def _require(key: str) -> str:
 TELEGRAM_BOT_TOKEN: str = _require("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID: str = _require("TELEGRAM_CHAT_ID")
 
-# Gemini
-GEMINI_API_KEY: str = _require("GEMINI_API_KEY")
+# Anthropic (primary AI)
+ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+
+# Gemini (fallback AI)
+GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
 # Google
 GOOGLE_CREDENTIALS_FILE: str = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
@@ -29,4 +32,4 @@ CANVAS_ICAL_URL: str = os.getenv("CANVAS_ICAL_URL", "")
 TIMEZONE: str = os.getenv("TIMEZONE", "America/New_York")
 
 # Database
-DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///reminder_bot.db")
+DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:////data/reminder_bot.db")

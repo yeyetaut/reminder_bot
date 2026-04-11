@@ -58,36 +58,30 @@ def morning_digest(task_repo: TaskRepo) -> str:
 
 
 def evening_recap(task_repo: TaskRepo) -> str:
+    """Returns None if there's nothing worth reporting (skip the message)."""
     today = date.today()
     tomorrow = today + timedelta(days=1)
 
     today_tasks = task_repo.for_date(today)
     done = [t for t in today_tasks if t.status == TaskStatus.done]
-    skipped = [t for t in today_tasks if t.status == TaskStatus.skipped]
-    pending_today = [t for t in today_tasks if t.status == TaskStatus.pending]
-    tomorrow_tasks = task_repo.for_date(tomorrow)
+    tomorrow_tasks = task_repo.upcoming(days=2)  # tasks due today or tomorrow
+
+    # Only send if something was completed or there's something due tomorrow
+    if not done and not tomorrow_tasks:
+        return None
 
     lines = [f"🌙 *Evening Recap — {today.strftime('%A, %b %d')}*\n"]
 
     if done:
-        lines.append(f"✅ *Completed ({len(done)}):*")
+        lines.append(f"✅ *Done today ({len(done)}):*")
         for t in done:
             lines.append(f"  • {t.title}")
         lines.append("")
 
-    if skipped or pending_today:
-        leftover = skipped + pending_today
-        lines.append(f"⏭️ *Carried over ({len(leftover)}):*")
-        for t in leftover:
-            lines.append(f"  • {t.title}")
-        lines.append("")
-
     if tomorrow_tasks:
-        lines.append(f"📅 *Tomorrow's plan ({len(tomorrow_tasks)}):*")
+        lines.append(f"📅 *Coming up:*")
         for t in tomorrow_tasks:
             lines.append(f"  • {t.title}{_due_label(t)}")
-    else:
-        lines.append("📅 Nothing scheduled for tomorrow yet\\.")
 
     return "\n".join(lines)
 

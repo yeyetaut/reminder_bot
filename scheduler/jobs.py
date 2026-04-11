@@ -36,9 +36,12 @@ async def job_morning_digest(bot, engine):
 
 
 async def job_evening_recap(bot, engine):
-    """Send done/skipped recap + tomorrow preview every evening."""
+    """Send done/skipped recap + tomorrow preview every evening (skips if nothing to report)."""
     try:
         text = evening_recap(TaskRepo(engine))
+        if text is None:
+            logger.info("Evening recap: nothing to report, skipping")
+            return
         await bot.send_message(
             chat_id=config.TELEGRAM_CHAT_ID,
             text=text,
@@ -106,16 +109,14 @@ async def job_auto_sync(bot, engine):
         task_repo = TaskRepo(engine)
         project_repo = ProjectRepo(engine)
 
-        new_tasks, new_projects = extract_and_save(
+        new_tasks, new_projects, _ = extract_and_save(
             calendar_events=gcal + canvas,
             emails=emails,
             task_repo=task_repo,
             project_repo=project_repo,
         )
 
-        if new_tasks or new_projects:
-            summary = f"🔄 Auto-sync: {len(new_tasks)} new task(s), {len(new_projects)} new project(s) found."
-            await bot.send_message(chat_id=config.TELEGRAM_CHAT_ID, text=summary)
+        # No notification — morning digest (7:30) covers new tasks
 
         # Send estimate proposals for new projects
         for project in new_projects:

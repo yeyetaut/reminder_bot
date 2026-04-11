@@ -1,23 +1,19 @@
 """
-Project estimator — for each unconfirmed project, uses Gemini Flash to:
+Project estimator — for each unconfirmed project, uses AI to:
 1. Estimate total hours required
 2. Propose a daily work schedule between today and the due date
+
+AI fallback chain: Claude Haiku → Gemini 2.0 Flash → Gemini 1.5 Flash
 """
 import json
 import logging
 from datetime import date
 from typing import Optional, Dict, Any
 
-from google import genai
-
 import config
 from db.models import Project
 
 logger = logging.getLogger(__name__)
-
-_client = genai.Client(api_key=config.GEMINI_API_KEY)
-_MODEL = "gemini-2.0-flash"
-_FALLBACK_MODEL = "gemini-1.5-flash"
 
 ESTIMATION_PROMPT = """\
 You are a student productivity assistant. Given a project's details, estimate the work required and suggest a daily schedule.
@@ -44,9 +40,52 @@ Rules:
 """
 
 
+def _call_claude(prompt: str) -> str:
+    import anthropic
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
+
+
+def _call_gemini(prompt: str, model: str) -> str:
+    from google import genai
+    client = genai.Client(api_key=config.GEMINI_API_KEY)
+    response = client.models.generate_content(model=model, contents=prompt)
+    return response.text.strip()
+
+
+def _call_ai(prompt: str) -> tuple[str, str]:
+    """Try Claude Haiku, then Gemini 2.0 Flash, then Gemini 1.5 Flash."""
+    errors = []
+
+    if config.ANTHROPIC_API_KEY:
+        try:
+            raw = _call_claude(prompt)
+            logger.info("Estimator: Claude Haiku call successful")
+            return raw, "claude-haiku"
+        except Exception as e:
+            logger.warning(f"Estimator: Claude Haiku failed ({e}), trying Gemini 2.0 Flash")
+            errors.append(str(e))
+
+    if config.GEMINI_API_KEY:
+        try:
+            raw = _call_gemini(prompt, "gemini-1.5-pro")
+            logger.info("Estimator: Gemini 1.5 Pro call successful")
+            return raw, "gemini-1.5-pro"
+        except Exception as e:
+            logger.error(f"Estimator: Gemini 1.5 Pro failed: {e}")
+            errors.append(str(e))
+
+    raise RuntimeError(f"All AI providers failed: {'; '.join(errors)}")
+
+
 def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
     """
-    Call Gemini Flash to estimate a project. Returns the parsed proposal dict or None on failure.
+    Call AI to estimate a project. Returns the parsed proposal dict or None on failure.
     Does NOT save to DB — caller handles confirmation flow.
     """
     today = date.today().isoformat()
@@ -62,22 +101,11 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
     )
 
     try:
-        response = _client.models.generate_content(model=_MODEL, contents=prompt)
-        raw = response.text.strip()
-        logger.info(f"Estimator: '{project.title}' — Gemini call successful")
+        raw, model_used = _call_ai(prompt)
+        logger.info(f"Estimator: '{project.title}' — {model_used} call successful")
     except Exception as e:
-        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-            logger.warning(f"Estimator: {_MODEL} quota exhausted, trying {_FALLBACK_MODEL}")
-            try:
-                response = _client.models.generate_content(model=_FALLBACK_MODEL, contents=prompt)
-                raw = response.text.strip()
-                logger.info(f"Estimator: '{project.title}' — {_FALLBACK_MODEL} call successful")
-            except Exception as e2:
-                logger.error(f"Estimator AI call failed on both models for '{project.title}': {e2}")
-                return None
-        else:
-            logger.error(f"Estimator AI call failed for '{project.title}': {e}")
-            return None
+        logger.error(f"Estimator: all AI providers failed for '{project.title}': {e}")
+        return None
 
     try:
         if raw.startswith("```"):

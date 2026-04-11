@@ -65,6 +65,11 @@ class DailyPlan(Base):
 
 def init_db(database_url: str):
     """Create all tables and return the engine."""
+    import os
+    # Ensure the directory exists (important for Railway volume mount at /data)
+    if database_url.startswith("sqlite:////"):
+        db_path = database_url[len("sqlite:///"):]
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
     engine = create_engine(database_url, echo=False)
     Base.metadata.create_all(engine)
     return engine
