@@ -130,8 +130,8 @@ async def job_auto_sync(bot, engine):
 
         # Send estimate proposals for new projects (skip if already planned)
         for project in new_projects:
-            if task_repo.has_ai_sessions_for_title(project.title):
-                logger.info(f"Auto-sync: skipping proposal for '{project.title}' — study sessions already exist")
+            if task_repo.has_ai_sessions_for_title(project.title) or project_repo.is_already_planned(project.title):
+                logger.info(f"Auto-sync: skipping proposal for '{project.title}' — already planned")
                 continue
             proposal = estimate_project(project)
             if proposal:

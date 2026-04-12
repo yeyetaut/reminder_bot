@@ -44,15 +44,15 @@ def morning_digest(task_repo: TaskRepo) -> str:
         lines.append("No tasks in the next 4 days\\. Enjoy your day\\! 🎉")
         return "\n".join(lines)
 
-    for i, task in enumerate(combined, 1):
+    for task in combined:
         label = _due_label(task)
-        lines.append(f"{i}\\. {task.title}{label}")
+        lines.append(f"\\[{task.id}\\] {task.title}{label}")
         if task.description:
             lines.append(f"   _{task.description}_")
 
     lines += [
         "",
-        f"📋 {len(combined)} task(s) — use /done <number> or /snooze <number>",
+        f"📋 {len(combined)} task(s) — use /done <id> or /snooze <id>",
     ]
     return "\n".join(lines)
 

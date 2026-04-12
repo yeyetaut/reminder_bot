@@ -97,7 +97,7 @@ def _filter_new(
         if not sid:
             continue
         title = item.get("title") or ""
-        if _STUDY_PREFIX.match(title):
+        if item.get("source") == "google_calendar" and _STUDY_PREFIX.match(title):
             logger.debug(f"  [STUDY SKIP] Ignoring own study event: {title!r}")
             continue
         if not task_repo.exists_by_source_id(sid) and project_repo.get_by_source_id(sid) is None:

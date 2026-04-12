@@ -102,7 +102,9 @@ def delete_study_events(project_title: str | None = None) -> int:
 
 
 def create_deadline_event(title: str, date_str: str, description: str = "") -> str | None:
-    """Create an all-day calendar event for a task deadline. date_str: 'YYYY-MM-DD'."""
+    """Create an all-day calendar event for a task deadline. date_str: 'YYYY-MM-DD'.
+    Returns the Google Calendar event ID (not the URL) so it can be stored for dedup.
+    """
     try:
         service = build("calendar", "v3", credentials=get_credentials())
         event = {
@@ -113,7 +115,7 @@ def create_deadline_event(title: str, date_str: str, description: str = "") -> s
         }
         created = service.events().insert(calendarId="primary", body=event).execute()
         logger.info(f"Created deadline event: {title} on {date_str}")
-        return created.get("htmlLink")
+        return created.get("id")
     except Exception as e:
         logger.error(f"Failed to create deadline event: {e}")
         return None

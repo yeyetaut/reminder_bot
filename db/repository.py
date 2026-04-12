@@ -55,6 +55,23 @@ class ProjectRepo:
             )
             s.commit()
 
+    def is_already_planned(self, title: str, threshold: float = 0.55) -> bool:
+        """Return True if a confirmed project with a similar title already exists.
+        Lower threshold (0.55) than _is_duplicate_project (0.72) — this is the
+        final safety net before sending a proposal.
+        """
+        from difflib import SequenceMatcher
+        import re
+        _study = re.compile(r'^\[study\]\s*', re.IGNORECASE)
+        def norm(t: str) -> str:
+            return _study.sub("", t).lower().strip()
+        norm_title = norm(title)
+        with Session(self.engine) as s:
+            for p in s.scalars(select(Project).where(Project.confirmed == True)):
+                if SequenceMatcher(None, norm_title, norm(p.title)).ratio() >= threshold:
+                    return True
+        return False
+
     def reset_confirmation(self, project_id: int) -> None:
         """Reset a project to unconfirmed so it can be re-estimated."""
         with Session(self.engine) as s:
@@ -81,6 +98,10 @@ class TaskRepo:
                 .values(scheduled_date=None)
             )
             s.commit()
+
+    def get_by_id(self, task_id: int) -> Optional[Task]:
+        with Session(self.engine) as s:
+            return s.get(Task, task_id)
 
     def exists_by_source_id(self, source_id: str) -> bool:
         with Session(self.engine) as s:
@@ -121,6 +142,19 @@ class TaskRepo:
         with Session(self.engine) as s:
             s.execute(update(Task).where(Task.id == task_id).values(status=status))
             s.commit()
+
+    def mark_gcal_synced(self, task_id: int) -> None:
+        with Session(self.engine) as s:
+            s.execute(update(Task).where(Task.id == task_id).values(gcal_synced=True))
+            s.commit()
+
+    def unsynced_canvas_tasks(self) -> List[Task]:
+        """Return Canvas tasks not yet written to Google Calendar."""
+        with Session(self.engine) as s:
+            return list(s.scalars(
+                select(Task)
+                .where(Task.source == "canvas", Task.gcal_synced == False, Task.due_date != None)
+            ))
 
     def has_ai_sessions_for_title(self, project_title: str) -> bool:
         """Return True if study sessions already exist for a project with this title.

@@ -29,11 +29,26 @@ async def post_shutdown(application):
         logger.info("Scheduler stopped")
 
 
+def _migrate(engine):
+    """Apply incremental schema migrations for SQLite."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        for stmt in [
+            "ALTER TABLE task ADD COLUMN gcal_synced INTEGER NOT NULL DEFAULT 0",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # column already exists
+
+
 def main():
     prepare_google_credentials()
     logger.info("Bot starting...")
 
     engine = init_db(config.DATABASE_URL)
+    _migrate(engine)
     logger.info(f"Database ready at: {config.DATABASE_URL}")
 
     app = build_bot(engine, post_init=post_init, post_shutdown=post_shutdown)

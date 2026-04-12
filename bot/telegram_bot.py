@@ -33,25 +33,25 @@ def _repos(context: ContextTypes.DEFAULT_TYPE):
 
 
 def _parse_task_ref(args, task_repo: TaskRepo):
-    """Resolve a task number or partial title from command args.
+    """Resolve a task by its stable DB id or partial title.
 
-    Uses the same merge logic as morning_digest so numbers always match
-    what the user sees in /today.
+    /today now shows [id] instead of positional numbers so ids are stable
+    even after marking other tasks done.
     """
     if not args:
         return None
     ref = " ".join(args)
+    # Try as direct task ID first
+    if ref.isdigit():
+        task = task_repo.get_by_id(int(ref))
+        if task and task.status.value == "pending":
+            return task
+    # Fall back to partial title match across today's visible tasks
     today = date.today()
     planned = task_repo.for_date(today)
     upcoming = task_repo.upcoming(days=7)
     planned_ids = {t.id for t in planned}
     tasks = planned + [t for t in upcoming if t.id not in planned_ids]
-    # Try as 1-based index first
-    if ref.isdigit():
-        idx = int(ref) - 1
-        if 0 <= idx < len(tasks):
-            return tasks[idx]
-    # Fall back to partial title match
     ref_lower = ref.lower()
     for t in tasks:
         if ref_lower in t.title.lower():
@@ -158,15 +158,17 @@ async def _run_sync(update, context, days_back: int, label: str):
     # Add new non-calendar tasks to Google Calendar as deadline events
     for task in new_tasks:
         if task.source != "google_calendar" and task.due_date:
-            create_deadline_event(
+            event_id = create_deadline_event(
                 title=task.title,
                 date_str=task.due_date.isoformat(),
                 description=task.description or "",
             )
+            if event_id:
+                task_repo.mark_gcal_synced(task.id)
 
     for project in new_projects:
-        if task_repo.has_ai_sessions_for_title(project.title):
-            logger.info(f"Skipping proposal for '{project.title}' — study sessions already exist")
+        if task_repo.has_ai_sessions_for_title(project.title) or project_repo.is_already_planned(project.title):
+            logger.info(f"Skipping proposal for '{project.title}' — already planned")
             continue
         proposal = estimate_project(project)
         if proposal:
@@ -179,8 +181,24 @@ async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_total_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Full sync — 14 days of emails \\+ 30 days calendar."""
+    """Full sync — 14 days of emails \\+ 30 days calendar, plus backfill all Canvas tasks to Google Calendar."""
+    task_repo, _, _ = _repos(context)
     await _run_sync(update, context, days_back=14, label="Syncing all sources\\.\\.\\.")
+    # Backfill any existing Canvas tasks not yet written to Google Calendar
+    unsynced = task_repo.unsynced_canvas_tasks()
+    if unsynced:
+        for task in unsynced:
+            event_id = create_deadline_event(
+                title=task.title,
+                date_str=task.due_date.isoformat(),
+                description=task.description or "",
+            )
+            if event_id:
+                task_repo.mark_gcal_synced(task.id)
+        await update.message.reply_text(
+            f"📅 Synced {len(unsynced)} existing Canvas task{'s' if len(unsynced) != 1 else ''} to Google Calendar\\.",
+            parse_mode="Markdown",
+        )
 
 
 async def cmd_clear_study_session(update: Update, context: ContextTypes.DEFAULT_TYPE):

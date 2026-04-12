@@ -48,6 +48,7 @@ class Task(Base):
     source: Mapped[str] = mapped_column(String, nullable=False)
     source_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     status: Mapped[TaskStatus] = mapped_column(SAEnum(TaskStatus), default=TaskStatus.pending)
+    gcal_synced: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     project: Mapped[Optional["Project"]] = relationship("Project", back_populates="tasks")
