@@ -36,7 +36,7 @@ def morning_digest(task_repo: TaskRepo) -> str:
 
     # Merge: planned first, then upcoming not already in planned
     planned_ids = {t.id for t in planned}
-    combined = planned + [t for t in upcoming if t.id not in planned_ids]
+    combined = planned + [t for t in upcoming if t.id not in planned_ids and t.source != "ai_plan"]
 
     lines = [f"☀️ *Good morning\\! Here's your plan for {today.strftime('%A, %b %d')}*\n"]
 

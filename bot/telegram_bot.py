@@ -159,7 +159,7 @@ async def _run_sync(update, context, days_back: int, label: str):
     for task in new_tasks:
         if task.source != "google_calendar" and task.due_date:
             event_id = create_deadline_event(
-                title=task.title,
+                title=f"[Deadline] {task.title}",
                 date_str=task.due_date.isoformat(),
                 description=task.description or "",
             )
@@ -189,7 +189,7 @@ async def cmd_total_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if unsynced:
         for task in unsynced:
             event_id = create_deadline_event(
-                title=task.title,
+                title=f"[Deadline] {task.title}",
                 date_str=task.due_date.isoformat(),
                 description=task.description or "",
             )

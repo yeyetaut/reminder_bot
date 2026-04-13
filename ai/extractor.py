@@ -59,6 +59,7 @@ def _compact(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _STUDY_PREFIX = re.compile(r'^\[study\]\s*', re.IGNORECASE)
+_BOT_PREFIX = re.compile(r'^\[(Study|Deadline)\]\s*', re.IGNORECASE)
 
 
 def _normalize_title(title: str) -> str:
@@ -97,8 +98,8 @@ def _filter_new(
         if not sid:
             continue
         title = item.get("title") or ""
-        if item.get("source") == "google_calendar" and _STUDY_PREFIX.match(title):
-            logger.debug(f"  [STUDY SKIP] Ignoring own study event: {title!r}")
+        if item.get("source") == "google_calendar" and _BOT_PREFIX.match(title):
+            logger.debug(f"  [BOT SKIP] Ignoring own bot event: {title!r}")
             continue
         if not task_repo.exists_by_source_id(sid) and project_repo.get_by_source_id(sid) is None:
             new_items.append(item)
