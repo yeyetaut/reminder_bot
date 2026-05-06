@@ -3,6 +3,7 @@ import logging
 import config
 from startup import prepare_google_credentials
 from db.models import init_db
+from db.repository import TaskRepo, ProjectRepo
 from bot.telegram_bot import build_bot
 from scheduler.jobs import build_scheduler
 
