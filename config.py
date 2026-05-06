@@ -33,3 +33,5 @@ TIMEZONE: str = os.getenv("TIMEZONE", "America/New_York")
 
 # Database
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///reminder_bot.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
