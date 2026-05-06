@@ -137,18 +137,21 @@ async def _run_sync(update, context, days_back: int, label: str):
     )
 
     lines = [
-        "✅ *Sync complete\\!*" if not ai_error else "⚠️ *Sync complete \\(no AI credits\\)*",
+        "✅ *Sync complete\\!*" if not ai_error else "⚠️ *Sync finished with AI issues*",
         f"• Google Calendar: {len(gcal)} events",
         f"• Canvas: {len(canvas)} events",
         f"• Gmail: {len(emails)} emails" + (" ⚠️ _error_" if gmail_error else ""),
         f"• New tasks saved: {len(new_tasks)}",
         f"• New projects: {len(new_projects)}",
     ]
-    if ai_error and "credit" in ai_error.lower():
-        lines.append("\n💳 *Add Gemini credits* at aistudio\\.google\\.com to enable AI task extraction from emails\\.")
-    elif ai_error:
-        short_err = ai_error[:150].replace("_", "\\_").replace("*", "\\*").replace(".", "\\.")
-        lines.append(f"\n⚠️ *AI error:* `{short_err}`")
+    if ai_error:
+        # Clean up and escape error for Telegram Markdown
+        clean_err = ai_error.replace("_", "\\_").replace("*", "\\*").replace(".", "\\.").replace("[", "\\[").replace("]", "\\]")
+        if "credit" in ai_error.lower() or "balance" in ai_error.lower():
+            lines.append(f"\n💳 *AI Credit Issue:* Your AI provider (Anthropic/Google) reported a credit/balance issue. Error: `{clean_err}`")
+        else:
+            lines.append(f"\n⚠️ *AI Error:* `{clean_err}`")
+    
     if gmail_error:
         short_err = gmail_error[:150].replace("_", "\\_").replace("*", "\\*").replace(".", "\\.")
         lines.append(f"⚠️ *Gmail error:* `{short_err}`")

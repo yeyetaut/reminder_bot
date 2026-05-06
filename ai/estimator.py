@@ -60,27 +60,72 @@ def _call_gemini(prompt: str, model: str) -> str:
 
 def _call_ai(prompt: str) -> tuple[str, str]:
     """Try Claude Haiku, then Gemini 2.0 Flash, then Gemini 1.5 Flash."""
+    import time
     errors = []
 
     if config.ANTHROPIC_API_KEY:
-        try:
-            raw = _call_claude(prompt)
-            logger.info("Estimator: Claude Haiku call successful")
-            return raw, "claude-haiku"
-        except Exception as e:
-            logger.warning(f"Estimator: Claude Haiku failed ({e}), trying Gemini 2.0 Flash")
-            errors.append(str(e))
+        for attempt in range(3):
+            try:
+                raw = _call_claude(prompt)
+                logger.info(f"Estimator: Claude Haiku call successful (attempt {attempt+1})")
+                return raw, "claude-haiku"
+            except Exception as e:
+                err_str = str(e)
+                if "credit" in err_str.lower() or "api_key" in err_str.lower():
+                    errors.append(f"Claude: {err_str}")
+                    break
+                logger.warning(f"Estimator: Claude attempt {attempt+1} failed: {e}")
+                errors.append(f"Claude: {err_str}")
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
 
     if config.GEMINI_API_KEY:
-        try:
-            raw = _call_gemini(prompt, "gemini-1.5-pro")
-            logger.info("Estimator: Gemini 1.5 Pro call successful")
-            return raw, "gemini-1.5-pro"
-        except Exception as e:
-            logger.error(f"Estimator: Gemini 1.5 Pro failed: {e}")
-            errors.append(str(e))
+        for attempt in range(2):
+            try:
+                raw = _call_gemini(prompt, "gemini-1.5-pro")
+                logger.info(f"Estimator: Gemini 1.5 Pro call successful (attempt {attempt+1})")
+                return raw, "gemini-1.5-pro"
+            except Exception as e:
+                err_str = str(e)
+                if "credit" in err_str.lower() or "api_key" in err_str.lower():
+                    errors.append(f"Gemini: {err_str}")
+                    break
+                logger.warning(f"Estimator: Gemini attempt {attempt+1} failed: {e}")
+                errors.append(f"Gemini: {err_str}")
+                if attempt < 1:
+                    time.sleep(1)
 
     raise RuntimeError(f"All AI providers failed: {'; '.join(errors)}")
+
+
+def _extract_json_object(text: str) -> Dict[str, Any]:
+    """More robustly extract a JSON object from AI response text."""
+    try:
+        return json.loads(text.strip())
+    except json.JSONDecodeError:
+        pass
+
+    import re
+    match = re.search(r'\{\s*".*\}\s*', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    if "```" in text:
+        parts = text.split("```")
+        for part in parts:
+            part = part.strip()
+            if part.startswith("json"):
+                part = part[4:].strip()
+            if part.startswith("{") and part.endswith("}"):
+                try:
+                    return json.loads(part)
+                except json.JSONDecodeError:
+                    continue
+
+    raise ValueError("Could not find a valid JSON object in AI response")
 
 
 def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
@@ -108,15 +153,11 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        proposal = json.loads(raw)
+        proposal = _extract_json_object(raw)
         proposal["project_id"] = project.id
         proposal["project_title"] = project.title
         return proposal
-    except json.JSONDecodeError as e:
+    except Exception as e:
         logger.error(f"Estimator: failed to parse AI response: {e}\nRaw: {raw[:300]}")
         return None
 

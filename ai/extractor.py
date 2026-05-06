@@ -129,29 +129,46 @@ def _call_gemini(prompt: str, model: str) -> str:
 def _call_ai(prompt: str) -> Tuple[str, str]:
     """
     Try AI providers in order. Returns (raw_text, model_used).
-    Raises if all fail.
+    Includes retry logic for transient errors.
     """
+    import time
     errors = []
 
     # 1. Claude Haiku (primary)
     if config.ANTHROPIC_API_KEY:
-        try:
-            raw = _call_claude(prompt)
-            logger.info("Extractor: Claude Haiku call successful")
-            return raw, "claude-haiku"
-        except Exception as e:
-            logger.warning(f"Extractor: Claude Haiku failed ({e}), trying Gemini 2.0 Flash")
-            errors.append(str(e))
-
-    # 2. Gemini 1.5 Pro (fallback)
+        for attempt in range(3):
+            try:
+                raw = _call_claude(prompt)
+                logger.info(f"Extractor: Claude Haiku call successful (attempt {attempt+1})")
+                return raw, "claude-haiku"
+            except Exception as e:
+                err_str = str(e)
+                # If it's a credit/auth error, don't retry
+                if "credit" in err_str.lower() or "api_key" in err_str.lower() or "permission" in err_str.lower():
+                    errors.append(f"Claude: {err_str}")
+                    break
+                
+                logger.warning(f"Extractor: Claude attempt {attempt+1} failed: {e}")
+                errors.append(f"Claude: {err_str}")
+                if attempt < 2:
+                    time.sleep(2 ** attempt)  # 1s, 2s backoff
+        
+    # 2. Gemini (fallback)
     if config.GEMINI_API_KEY:
-        try:
-            raw = _call_gemini(prompt, "gemini-1.5-pro")
-            logger.info("Extractor: Gemini 1.5 Pro call successful")
-            return raw, "gemini-1.5-pro"
-        except Exception as e:
-            logger.error(f"Extractor: Gemini 1.5 Pro failed: {e}")
-            errors.append(str(e))
+        for attempt in range(2):
+            try:
+                raw = _call_gemini(prompt, "gemini-1.5-pro")
+                logger.info(f"Extractor: Gemini 1.5 Pro call successful (attempt {attempt+1})")
+                return raw, "gemini-1.5-pro"
+            except Exception as e:
+                err_str = str(e)
+                if "credit" in err_str.lower() or "api_key" in err_str.lower():
+                    errors.append(f"Gemini: {err_str}")
+                    break
+                logger.warning(f"Extractor: Gemini attempt {attempt+1} failed: {e}")
+                errors.append(f"Gemini: {err_str}")
+                if attempt < 1:
+                    time.sleep(1)
 
     raise RuntimeError(f"All AI providers failed: {'; '.join(errors)}")
 
@@ -201,6 +218,39 @@ def _fallback_save(
     return saved, []
 
 
+def _extract_json_array(text: str) -> List[Dict[str, Any]]:
+    """More robustly extract a JSON array from AI response text."""
+    # First try direct parse
+    try:
+        return json.loads(text.strip())
+    except json.JSONDecodeError:
+        pass
+
+    # Try to find something that looks like [ ... ]
+    import re
+    match = re.search(r'\[\s*\{.*\}\s*\]', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+    
+    # Try the old markdown block splitting as a last resort
+    if "```" in text:
+        parts = text.split("```")
+        for part in parts:
+            part = part.strip()
+            if part.startswith("json"):
+                part = part[4:].strip()
+            if part.startswith("[") and part.endswith("]"):
+                try:
+                    return json.loads(part)
+                except json.JSONDecodeError:
+                    continue
+    
+    raise ValueError("Could not find a valid JSON array in AI response")
+
+
 def extract_and_save(
     calendar_events: List[Dict[str, Any]],
     emails: List[Dict[str, Any]],
@@ -234,13 +284,9 @@ def extract_and_save(
 
     # Parse AI response
     try:
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        extracted = json.loads(raw)
-    except json.JSONDecodeError as e:
-        logger.error(f"Extractor: failed to parse AI response: {e}\nRaw: {raw[:300]}")
+        extracted = _extract_json_array(raw)
+    except Exception as e:
+        logger.error(f"Extractor: failed to parse AI response: {e}\nRaw: {raw[:500]}")
         return [], [], f"JSON parse error: {e}"
 
     source_map = {i["source_id"]: i for i in new_items}
