@@ -7,3 +7,5 @@ __pycache__/
 reminder_bot.db
 *.db
 .DS_Store
+GEMINI.md
+PLAN.md

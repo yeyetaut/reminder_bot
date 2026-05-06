@@ -49,6 +49,7 @@ def main():
 
     engine = init_db(config.DATABASE_URL)
     _migrate(engine)
+    TaskRepo(engine).run_migrations()
     logger.info(f"Database ready at: {config.DATABASE_URL}")
 
     app = build_bot(engine, post_init=post_init, post_shutdown=post_shutdown)

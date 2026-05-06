@@ -61,26 +61,23 @@ def delete_study_events(project_title: str | None = None) -> int:
     """
     try:
         service = build("calendar", "v3", credentials=get_credentials())
-        now = datetime.now(timezone.utc)
-        # Look back 90 days and forward 365 days to catch all study sessions
-        time_min = (now - timedelta(days=90)).isoformat()
-        time_max = (now + timedelta(days=365)).isoformat()
-
-        prefix = f"[Study] {project_title}" if project_title else "[Study] "
-
         deleted = 0
         page_token = None
+
+        prefix = "[Study] "
+        if project_title:
+            prefix += project_title
+
         while True:
-            kwargs = dict(
-                calendarId="primary",
-                timeMin=time_min,
-                timeMax=time_max,
-                singleEvents=True,
-                maxResults=250,
+            result = (
+                service.events()
+                .list(
+                    calendarId="primary",
+                    q=prefix,
+                    pageToken=page_token,
+                )
+                .execute()
             )
-            if page_token:
-                kwargs["pageToken"] = page_token
-            result = service.events().list(**kwargs).execute()
 
             for event in result.get("items", []):
                 summary = event.get("summary", "")
@@ -138,7 +135,31 @@ def create_event(title: str, date_str: str, duration_hours: float = 1.0, descrip
         created = service.events().insert(calendarId="primary", body=event).execute()
         logger.info(f"Created Google Calendar event: {title} on {date_str}")
         return created.get("htmlLink")
-
     except Exception as e:
         logger.error(f"Failed to create Google Calendar event: {e}")
         return None
+
+
+def find_event_by_title(title: str, date_str: str) -> bool:
+    """Check if an event with this exact title exists on this date."""
+    try:
+        service = build("calendar", "v3", credentials=get_credentials())
+        start_dt = datetime.fromisoformat(f"{date_str}T00:00:00").replace(tzinfo=timezone.utc)
+        end_dt = start_dt + timedelta(days=1)
+
+        result = service.events().list(
+            calendarId="primary",
+            timeMin=start_dt.isoformat(),
+            timeMax=end_dt.isoformat(),
+            q=title,
+            singleEvents=True
+        ).execute()
+
+        events = result.get("items", [])
+        for e in events:
+            if e.get("summary") == title:
+                return True
+        return False
+    except Exception as e:
+        logger.error(f"Failed to search for event '{title}': {e}")
+        return False

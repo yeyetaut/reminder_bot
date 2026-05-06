@@ -28,7 +28,7 @@ class ProjectRepo:
                 select(Project)
                 .where(Project.confirmed == False)
                 .options(joinedload(Project.tasks))
-            ))
+            ).unique())
 
     def list_active(self) -> List[Project]:
         """Projects with pending tasks (tasks eagerly loaded)."""
@@ -40,7 +40,7 @@ class ProjectRepo:
                 .where(Task.status == TaskStatus.pending)
                 .options(joinedload(Project.tasks))
                 .distinct()
-            ))
+            ).unique())
 
     def list_all(self) -> List[Project]:
         with Session(self.engine) as s:
@@ -86,9 +86,8 @@ class ProjectRepo:
 class TaskRepo:
     def __init__(self, engine: Engine):
         self.engine = engine
-        self._migrate_scheduled_dates()
 
-    def _migrate_scheduled_dates(self) -> None:
+    def run_migrations(self) -> None:
         """One-time fix: clear scheduled_date for non-AI-planned tasks so they
         appear via due_date-based upcoming() queries instead of for_date()."""
         with Session(self.engine) as s:

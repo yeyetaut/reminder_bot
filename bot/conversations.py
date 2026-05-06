@@ -122,10 +122,16 @@ async def confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     project_repo.confirm(project_id, estimated_hours)
 
     # Write sessions to Google Calendar
+    from integrations.google_calendar import find_event_by_title
     cal_links = []
     for session in sessions:
+        title = f"[Study] {proposal['project_title']}"
+        if find_event_by_title(title, session["date"]):
+            logger.info(f"Skipping [Study] event for '{proposal['project_title']}' on {session['date']} — already exists")
+            continue
+
         link = create_event(
-            title=f"[Study] {proposal['project_title']}",
+            title=title,
             date_str=session["date"],
             duration_hours=session["hours"],
             description=session["focus"],

@@ -156,10 +156,17 @@ async def _run_sync(update, context, days_back: int, label: str):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
     # Add new non-calendar tasks to Google Calendar as deadline events
+    from integrations.google_calendar import find_event_by_title
     for task in new_tasks:
         if task.source != "google_calendar" and task.due_date:
+            title = f"[Deadline] {task.title}"
+            if find_event_by_title(title, task.due_date.isoformat()):
+                logger.info(f"Skipping deadline event creation for '{task.title}' — already exists on GCal")
+                task_repo.mark_gcal_synced(task.id)
+                continue
+
             event_id = create_deadline_event(
-                title=f"[Deadline] {task.title}",
+                title=title,
                 date_str=task.due_date.isoformat(),
                 description=task.description or "",
             )

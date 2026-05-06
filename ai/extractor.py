@@ -64,7 +64,7 @@ _BOT_PREFIX = re.compile(r'^\[(Study|Deadline)\]\s*', re.IGNORECASE)
 
 def _normalize_title(title: str) -> str:
     """Strip [study] prefix and lowercase for comparison."""
-    return _STUDY_PREFIX.sub("", title).lower().strip()
+    return _STUDY_PREFIX.sub("", title.strip()).lower().strip()
 
 
 def _is_duplicate_project(title: str, project_repo: ProjectRepo) -> bool:
