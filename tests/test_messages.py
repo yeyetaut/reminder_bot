@@ -8,21 +8,21 @@ def test_due_label():
     today = date.today()
     
     t_today = Task(due_date=today)
-    assert "due TODAY" in _due_label(t_today)
+    assert "_today_" in _due_label(t_today)
     
     t_tomorrow = Task(due_date=today + timedelta(days=1))
-    assert "due tomorrow" in _due_label(t_tomorrow)
+    assert "_tomorrow_" in _due_label(t_tomorrow)
     
     t_overdue = Task(due_date=today - timedelta(days=1))
-    assert "overdue" in _due_label(t_overdue)
+    assert "_overdue_" in _due_label(t_overdue)
     
     t_future = Task(due_date=today + timedelta(days=5))
-    assert "due in 5d" in _due_label(t_future)
+    assert "_5d_" in _due_label(t_future)
 
 def test_morning_digest_empty(engine):
     task_repo = TaskRepo(engine)
     digest = morning_digest(task_repo)
-    assert "No tasks" in digest
+    assert "No tasks scheduled" in digest
 
 def test_morning_digest_with_tasks(engine):
     task_repo = TaskRepo(engine)
@@ -34,4 +34,4 @@ def test_morning_digest_with_tasks(engine):
     digest = morning_digest(task_repo)
     assert "Today's Task" in digest
     assert "Upcoming Deadline" in digest
-    assert "due in 2d" in digest
+    assert "_2d_" in digest

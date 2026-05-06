@@ -165,19 +165,19 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
 def format_proposal_message(proposal: Dict[str, Any]) -> str:
     """Format an estimation proposal as a Telegram message for user confirmation."""
     lines = [
-        f"*New project detected:* {proposal['project_title']}",
-        f"*Estimated effort:* {proposal['estimated_hours']} hours",
-        f"*Why:* {proposal.get('reasoning', '')}",
+        f"● *New Project: {proposal['project_title']}*",
+        f"*Estimated Effort:* {proposal['estimated_hours']} hours",
+        f"*Rationale:* {proposal.get('reasoning', '')}",
         "",
-        "*Proposed daily schedule:*",
+        "*Proposed Schedule*",
     ]
     for session in proposal.get("daily_sessions", []):
-        lines.append(f"  • {session['date']} — {session['hours']}h: {session['focus']}")
+        lines.append(f"· {session['date']} · {session['hours']}h: {session['focus']}")
 
     lines += [
         "",
-        "Reply with:",
-        "✅ /confirm\\_estimate — accept this plan",
-        "✏️ /adjust\\_hours <number> — change total hours",
+        "---",
+        "✅ /confirm\\_estimate · accept plan",
+        "✏️ /adjust\\_hours <n> · change effort",
     ]
     return "\n".join(lines)
