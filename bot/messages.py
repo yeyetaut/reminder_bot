@@ -105,14 +105,16 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     upcoming = task_repo.upcoming(days=7)
     active_projects = project_repo.list_active()
 
+    # Filter out focus sessions from weekly overview
+    deadlines = [t for t in upcoming if t.source != "ai_plan"]
+
     lines = [f"● *Weekly Overview · week of {today.strftime('%b %d')}*\n"]
 
-    if upcoming:
-        lines.append(f"*Tasks ({len(upcoming)})*")
-        for t in upcoming:
+    if deadlines:
+        lines.append(f"*Tasks ({len(deadlines)})*")
+        for t in deadlines:
             lines.append(f"· {t.title}{_due_label(t)}")
             lines.append("")
-        # lines.append("")
 
     if active_projects:
         lines.append(f"*Projects ({len(active_projects)})*")
@@ -121,9 +123,8 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
             due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
             lines.append(f"· {p.title} · _{len(pending)} sessions left · due {due_str}_")
             lines.append("")
-        # lines.append("")
 
-    if not upcoming and not active_projects:
+    if not deadlines and not active_projects:
         lines.append("_No active tasks or projects this week._")
 
     return "\n".join(lines)
@@ -134,15 +135,17 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     upcoming = task_repo.upcoming(days=30)
     active_projects = project_repo.list_active()
 
+    # Filter out focus sessions from monthly overview
+    deadlines = [t for t in upcoming if t.source != "ai_plan"]
+
     lines = [f"● *Monthly Overview · {today.strftime('%B %Y')}*\n"]
 
-    if upcoming:
-        lines.append(f"*Deadlines ({len(upcoming)})*")
-        for t in upcoming:
+    if deadlines:
+        lines.append(f"*Deadlines ({len(deadlines)})*")
+        for t in deadlines:
             due = t.due_date.strftime('%b %d') if t.due_date else "?"
             lines.append(f"· {due} · {t.title}")
             lines.append("")
-        # lines.append("")
 
     if active_projects:
         lines.append(f"*Active Projects*")
@@ -152,7 +155,7 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
             lines.append(f"· {p.title} · _{hours} · due {due_str}_")
             lines.append("")
 
-    if not upcoming and not active_projects:
+    if not deadlines and not active_projects:
         lines.append("_Your calendar is clear for the month._")
 
     return "\n".join(lines)
