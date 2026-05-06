@@ -173,6 +173,7 @@ def format_proposal_message(proposal: Dict[str, Any]) -> str:
     ]
     for session in proposal.get("daily_sessions", []):
         lines.append(f"· {session['date']} · {session['hours']}h: {session['focus']}")
+        lines.append("") # Extra space
 
     lines += [
         "",

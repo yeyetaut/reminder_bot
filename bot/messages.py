@@ -49,7 +49,7 @@ def morning_digest(task_repo: TaskRepo) -> str:
             lines.append(f"· {task.title}")
             if task.description:
                 lines.append(f"  _{task.description}_")
-        lines.append("")
+            lines.append("") # Extra space between sessions
 
     if deadlines:
         lines.append("*Deadlines & Tasks*")
@@ -58,7 +58,7 @@ def morning_digest(task_repo: TaskRepo) -> str:
             lines.append(f"· {task.title}{label}")
             if task.description:
                 lines.append(f"  _{task.description}_")
-        lines.append("")
+            lines.append("") # Extra space between deadlines
 
     # Footer with IDs for reference
     all_ids = [str(t.id) for t in planned + deadlines]
@@ -88,12 +88,14 @@ def evening_recap(task_repo: TaskRepo) -> str:
         lines.append("*Completed*")
         for t in done:
             lines.append(f"· {t.title}")
-        lines.append("")
+            lines.append("")
+        # lines.append("") # Already added per item
 
     if tomorrow_tasks:
         lines.append("*Coming up next*")
         for t in tomorrow_tasks:
             lines.append(f"· {t.title}{_due_label(t)}")
+            lines.append("")
 
     return "\n".join(lines)
 
@@ -109,7 +111,8 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
         lines.append(f"*Tasks ({len(upcoming)})*")
         for t in upcoming:
             lines.append(f"· {t.title}{_due_label(t)}")
-        lines.append("")
+            lines.append("")
+        # lines.append("")
 
     if active_projects:
         lines.append(f"*Projects ({len(active_projects)})*")
@@ -117,7 +120,8 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
             pending = [t for t in p.tasks if t.status == TaskStatus.pending]
             due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
             lines.append(f"· {p.title} · _{len(pending)} sessions left · due {due_str}_")
-        lines.append("")
+            lines.append("")
+        # lines.append("")
 
     if not upcoming and not active_projects:
         lines.append("_No active tasks or projects this week._")
@@ -137,7 +141,8 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
         for t in upcoming:
             due = t.due_date.strftime('%b %d') if t.due_date else "?"
             lines.append(f"· {due} · {t.title}")
-        lines.append("")
+            lines.append("")
+        # lines.append("")
 
     if active_projects:
         lines.append(f"*Active Projects*")
@@ -145,6 +150,7 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
             due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
             hours = f"{p.estimated_hours}h" if p.estimated_hours else "unestimated"
             lines.append(f"· {p.title} · _{hours} · due {due_str}_")
+            lines.append("")
 
     if not upcoming and not active_projects:
         lines.append("_Your calendar is clear for the month._")
