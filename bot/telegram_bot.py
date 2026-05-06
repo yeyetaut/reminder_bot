@@ -4,6 +4,7 @@ Telegram bot — command handlers and bot startup.
 import logging
 from datetime import date, timedelta
 
+from sqlalchemy.orm import Session
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -74,8 +75,28 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/clear\\_study\\_session <number> — remove study sessions for a project\n"
         "/clear\\_all\\_study\\_sessions — remove all study sessions\n"
         "/weekly — weekly overview\n"
-        "/monthly — monthly overview",
+        "/monthly — monthly overview\n"
+        "/status — check database status",
         parse_mode="Markdown",
+    )
+
+
+async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    task_repo, project_repo, _ = _repos(context)
+    with Session(task_repo.engine) as s:
+        from sqlalchemy import func, select
+        from db.models import Task, Project
+        task_count = s.scalar(select(func.count(Task.id)))
+        pending_count = s.scalar(select(func.count(Task.id)).where(Task.status == TaskStatus.pending))
+        proj_count = s.scalar(select(func.count(Project.id)))
+    
+    await update.message.reply_text(
+        f"📊 *Database Status:*\n"
+        f"• Total Tasks: {task_count}\n"
+        f"• Pending Tasks: {pending_count}\n"
+        f"• Total Projects: {proj_count}\n"
+        f"• DB URL: `{config.DATABASE_URL.split('@')[-1]}`", # Hide credentials if any
+        parse_mode="Markdown"
     )
 
 
@@ -286,6 +307,7 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("projects", cmd_projects))
     app.add_handler(CommandHandler("weekly", cmd_weekly))
     app.add_handler(CommandHandler("monthly", cmd_monthly))
+    app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("done", cmd_done))
     app.add_handler(CommandHandler("snooze", cmd_snooze))
     app.add_handler(CommandHandler("sync", cmd_sync))

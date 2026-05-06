@@ -192,7 +192,7 @@ class TaskRepo:
         with Session(self.engine) as s:
             return list(s.scalars(
                 select(Task)
-                .where(Task.due_date >= today, Task.due_date <= end, Task.status == TaskStatus.pending)
+                .where(Task.due_date <= end, Task.status == TaskStatus.pending)
                 .order_by(Task.due_date)
             ))
 
