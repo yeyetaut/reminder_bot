@@ -107,12 +107,12 @@ def _filter_new(
 
 
 def _call_claude(prompt: str) -> str:
-    """Call Claude Haiku. Raises on any error."""
+    """Call Claude. Raises on any error."""
     import anthropic
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=2048,
+        max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
     return response.content[0].text.strip()
@@ -258,9 +258,8 @@ def extract_and_save(
     project_repo: ProjectRepo,
 ) -> Tuple[List[Task], List[Project], str | None]:
     """
-    Main entry point. Filters new items, calls AI, saves results.
+    Main entry point. Filters new items, calls AI in batches, saves results.
     Returns (new_tasks, new_projects, ai_error_message).
-    ai_error_message is None on success, a string if all AI providers failed.
     """
     all_items = calendar_events + emails
     new_items = _filter_new(all_items, task_repo, project_repo)
@@ -269,73 +268,92 @@ def extract_and_save(
         logger.info("Extractor: no new items to process")
         return [], [], None
 
-    logger.info(f"Extractor: {len(all_items)} total items → {len(new_items)} new, sending to AI")
+    logger.info(f"Extractor: {len(all_items)} total items → {len(new_items)} new, processing in batches")
 
-    compact_items = [_compact(i) for i in new_items]
-    prompt = EXTRACTION_PROMPT + json.dumps(compact_items, indent=2)
-
-    try:
-        raw, model_used = _call_ai(prompt)
-    except Exception as e:
-        logger.error(f"Extractor: all AI providers failed: {e}")
-        logger.info("Falling back to direct save (calendar events only)")
-        tasks, projects = _fallback_save(new_items, task_repo)
-        return tasks, projects, str(e)
-
-    # Parse AI response
-    try:
-        extracted = _extract_json_array(raw)
-    except Exception as e:
-        logger.error(f"Extractor: failed to parse AI response: {e}\nRaw: {raw[:500]}")
-        return [], [], f"JSON parse error: {e}"
-
-    source_map = {i["source_id"]: i for i in new_items}
-
+    # Process in batches of 20 to avoid token limits and truncation
+    BATCH_SIZE = 20
     new_tasks: List[Task] = []
     new_projects: List[Project] = []
+    all_errors = []
 
-    for entry in extracted:
-        sid = entry.get("source_id", "")
-        original = source_map.get(sid, {})
-        source = original.get("source", "unknown")
+    for i in range(0, len(new_items), BATCH_SIZE):
+        batch = new_items[i : i + BATCH_SIZE]
+        batch_num = (i // BATCH_SIZE) + 1
+        total_batches = (len(new_items) + BATCH_SIZE - 1) // BATCH_SIZE
+        
+        logger.info(f"Extractor: processing batch {batch_num}/{total_batches} ({len(batch)} items)")
+        
+        compact_items = [_compact(item) for item in batch]
+        prompt = EXTRACTION_PROMPT + json.dumps(compact_items, indent=2)
 
-        due_raw = entry.get("due_date")
-        due = None
-        if due_raw:
-            try:
-                due = date.fromisoformat(due_raw[:10])
-            except ValueError:
-                pass
+        try:
+            raw, model_used = _call_ai(prompt)
+        except Exception as e:
+            logger.error(f"Extractor: batch {batch_num} failed: {e}")
+            all_errors.append(f"Batch {batch_num}: {e}")
+            # Fallback for calendar/canvas items in this batch
+            b_tasks, b_projects = _fallback_save(batch, task_repo)
+            new_tasks.extend(b_tasks)
+            new_projects.extend(b_projects)
+            continue
 
-        if entry.get("is_project"):
-            proj_title = entry.get("title", "Untitled project")
-            if _is_duplicate_project(proj_title, project_repo):
-                logger.info(f"  [DUP DROP] Skipping project '{proj_title}' — already exists")
+        # Parse AI response for this batch
+        try:
+            extracted = _extract_json_array(raw)
+        except Exception as e:
+            logger.error(f"Extractor: failed to parse batch {batch_num}: {e}\nRaw: {raw[:300]}")
+            all_errors.append(f"Batch {batch_num} JSON error: {e}")
+            continue
+
+        source_map = {item["source_id"]: item for item in batch}
+
+        for entry in extracted:
+            sid = entry.get("source_id", "")
+            original = source_map.get(sid, {})
+            if not original and sid:
+                # AI might have hallucinated/truncated a source_id, try fuzzy or skip
                 continue
-            project = Project(
-                title=proj_title,
-                source=source,
-                source_id=sid,
-                description=entry.get("description", ""),
-                due_date=due,
-                confirmed=False,
-            )
-            project_repo.save(project)
-            new_projects.append(project)
-            logger.info(f"  [PROJECT] {project.title} (due {due})")
-        else:
-            task = Task(
-                title=entry.get("title", "Untitled task"),
-                source=source,
-                source_id=sid,
-                description=entry.get("description", ""),
-                due_date=due,
-                scheduled_date=None,
-                status=TaskStatus.pending,
-            )
-            task_repo.save(task)
-            new_tasks.append(task)
-            logger.info(f"  [TASK]    {task.title} (due {due})")
+            
+            source = original.get("source", "unknown")
 
-    logger.info(f"Extractor: saved {len(new_tasks)} tasks, {len(new_projects)} projects (via {model_used})")
-    return new_tasks, new_projects, None
+            due_raw = entry.get("due_date")
+            due = None
+            if due_raw:
+                try:
+                    due = date.fromisoformat(due_raw[:10])
+                except ValueError:
+                    pass
+
+            if entry.get("is_project"):
+                proj_title = entry.get("title", "Untitled project")
+                if _is_duplicate_project(proj_title, project_repo):
+                    logger.info(f"  [DUP DROP] Skipping project '{proj_title}' — already exists")
+                    continue
+                project = Project(
+                    title=proj_title,
+                    source=source,
+                    source_id=sid,
+                    description=entry.get("description", ""),
+                    due_date=due,
+                    confirmed=False,
+                )
+                project_repo.save(project)
+                new_projects.append(project)
+                logger.info(f"  [PROJECT] {project.title} (due {due})")
+            else:
+                task = Task(
+                    title=entry.get("title", "Untitled task"),
+                    source=source,
+                    source_id=sid,
+                    description=entry.get("description", ""),
+                    due_date=due,
+                    scheduled_date=None,
+                    status=TaskStatus.pending,
+                )
+                task_repo.save(task)
+                new_tasks.append(task)
+                logger.info(f"  [TASK]    {task.title} (due {due})")
+
+    ai_error = "; ".join(all_errors) if all_errors else None
+    logger.info(f"Extractor: total saved {len(new_tasks)} tasks, {len(new_projects)} projects")
+    return new_tasks, new_projects, ai_error
