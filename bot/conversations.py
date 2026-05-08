@@ -331,7 +331,7 @@ async def skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 def build_estimate_conversation() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Document.ALL | filters.TEXT & ~filters.COMMAND, handle_context_upload)
+            MessageHandler(filters.Document.ALL | (filters.TEXT & ~filters.COMMAND & filters.Regex(r'^.{100,}$')), handle_context_upload)
         ],
         states={
             AWAITING_CONFIRMATION: [

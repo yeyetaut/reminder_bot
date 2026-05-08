@@ -36,15 +36,13 @@ def is_exam(title: str) -> bool:
 def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     today = date.today()
 
-    # AI-planned sessions scheduled for today
-    planned = task_repo.for_date(today)
     # Upcoming deadlines in the next 4 days (includes today)
     upcoming = task_repo.upcoming(days=4)
     # Active projects
     active_projects = project_repo.list_active()
 
-    # Filter upcoming to exclude AI sessions (which are in 'planned')
-    deadlines = [t for t in upcoming if t.source not in ("ai_plan", "ai_breakdown")]
+    # Filter upcoming to exclude AI breakdowns
+    deadlines = [t for t in upcoming if t.source != "ai_breakdown"]
     
     # Split deadlines into exams and regular tasks
     exams = [t for t in deadlines if is_exam(t.title)]
@@ -52,17 +50,33 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
 
     lines = [f"● *Plan for {today.strftime('%A, %b %d')}*\n"]
 
-    if not planned and not deadlines and not active_projects:
+    if not deadlines and not active_projects:
         lines.append("_No tasks scheduled for the next few days._")
         return "\n".join(lines)
 
-    if planned:
-        lines.append("🟢 *Focus Sessions*")
-        for task in planned:
-            lines.append(f"· {task.title}")
-            if task.description:
-                lines.append(f"  _{task.description}_")
-            lines.append("") # Extra space between sessions
+    if active_projects:
+        lines.append("📋 *Projects*")
+        project_displayed = False
+        for p in active_projects:
+            pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
+            if not pending:
+                continue
+            
+            project_displayed = True
+            lines.append(f"· *{p.title}*")
+            # Show top 3 tasks that remain
+            for st in pending[:3]:
+                # Strip project prefix from sub-task title for cleaner display
+                display_title = st.title.split(" — ")[-1] if " — " in st.title else st.title
+                lines.append(f"  ▫️ {display_title}")
+            
+            if len(pending) > 3:
+                lines.append(f"  _...and {len(pending)-3} more_")
+            lines.append("") # Extra space between projects
+        
+        if not project_displayed:
+            # If no projects had pending ai_breakdown tasks, remove the header we added
+            lines.pop()
 
     if tasks:
         lines.append("🟠 *Deadlines & Tasks*")
@@ -82,24 +96,14 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
                 lines.append(f"  _{exam.description}_")
             lines.append("") # Extra space between exams
 
-    if active_projects:
-        lines.append("📋 *Projects*")
-        for p in active_projects:
-            pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
-            if not pending:
-                continue
-            
-            lines.append(f"· *{p.title}*")
-            # Show top 3 tasks
-            for st in pending[:3]:
-                lines.append(f"  ▫️ {st.title.split(' — ')[-1]}")
-            
-            if len(pending) > 3:
-                lines.append(f"  _...and {len(pending)-3} more_")
-            lines.append("") # Extra space between projects
+    # Footer with IDs for reference (only tasks with deadlines/exams)
+    all_ids = [str(t.id) for t in deadlines]
+    
+    # Add project sub-task IDs to the footer as well so they can be marked done
+    for p in active_projects:
+        pending = [str(t.id) for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
+        all_ids.extend(pending[:3]) # Only include IDs for the 3 shown
 
-    # Footer with IDs for reference
-    all_ids = [str(t.id) for t in planned + deadlines]
     lines += [
         "---",
         f"_Actions: /done or /snooze_ · `ID: {', '.join(all_ids)}`",

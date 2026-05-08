@@ -30,7 +30,8 @@ def test_morning_digest_with_tasks(engine):
     project_repo = ProjectRepo(engine)
     today = date.today()
     
-    task_repo.save(Task(title="Today's Task", scheduled_date=today, source="test", status=TaskStatus.pending))
+    # Only tasks with due_date in next 4 days are shown in Deadlines
+    task_repo.save(Task(title="Today's Task", due_date=today, source="test", status=TaskStatus.pending))
     task_repo.save(Task(title="Upcoming Deadline", due_date=today + timedelta(days=2), source="test", status=TaskStatus.pending))
     
     digest = morning_digest(task_repo, project_repo)
