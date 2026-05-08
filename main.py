@@ -31,18 +31,29 @@ async def post_shutdown(application):
 
 
 def _migrate(engine):
-    """Apply incremental schema migrations."""
+    """Apply incremental schema migrations robustly."""
     from sqlalchemy import text
-    with engine.connect() as conn:
-        for stmt in [
-            "ALTER TABLE tasks ADD COLUMN gcal_synced INTEGER NOT NULL DEFAULT 0",
-            "ALTER TABLE projects ADD COLUMN context_notes VARCHAR",
-        ]:
+    from sqlalchemy.exc import ProgrammingError, InternalError
+
+    stmts = [
+        "ALTER TABLE tasks ADD COLUMN gcal_synced INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE projects ADD COLUMN context_notes VARCHAR",
+    ]
+
+    for stmt in stmts:
+        # Open a fresh connection for each statement to ensure transaction isolation.
+        # In Postgres, if a statement fails inside a transaction, the connection 
+        # is poisoned until a rollback/new connection.
+        with engine.connect() as conn:
             try:
                 conn.execute(text(stmt))
                 conn.commit()
-            except Exception:
-                pass  # column already exists
+                logger.info(f"Migration successful: {stmt}")
+            except (ProgrammingError, InternalError):
+                # This usually means the column already exists
+                logger.debug(f"Migration skipped (likely already applied): {stmt}")
+            except Exception as e:
+                logger.warning(f"Migration error for '{stmt}': {e}")
 
 
 def main():
