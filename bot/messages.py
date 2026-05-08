@@ -41,8 +41,8 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     # Active projects
     active_projects = project_repo.list_active()
 
-    # Filter upcoming to exclude AI breakdowns
-    deadlines = [t for t in upcoming if t.source != "ai_breakdown"]
+    # Filter upcoming to exclude AI-generated tasks (they are shown in the Projects section)
+    deadlines = [t for t in upcoming if t.source not in ("ai_plan", "ai_breakdown")]
     
     # Split deadlines into exams and regular tasks
     exams = [t for t in deadlines if is_exam(t.title)]
@@ -146,8 +146,8 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     upcoming = task_repo.upcoming(days=7)
     active_projects = project_repo.list_active()
 
-    # Filter out focus sessions from weekly overview
-    deadlines = [t for t in upcoming if t.source != "ai_plan"]
+    # Filter out AI breakdowns from the regular deadlines list
+    deadlines = [t for t in upcoming if t.source not in ("ai_plan", "ai_breakdown")]
     exams = [t for t in deadlines if is_exam(t.title)]
     tasks = [t for t in deadlines if not is_exam(t.title)]
 
@@ -168,9 +168,9 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     if active_projects:
         lines.append(f"🟡 *Projects ({len(active_projects)})*")
         for p in active_projects:
-            pending = [t for t in p.tasks if t.status == TaskStatus.pending]
+            pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
             due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
-            lines.append(f"· {p.title} · _{len(pending)} sessions left · due {due_str}_")
+            lines.append(f"· {p.title} · _{len(pending)} tasks left · due {due_str}_")
             lines.append("")
 
     if not deadlines and not active_projects:
@@ -184,8 +184,8 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     upcoming = task_repo.upcoming(days=30)
     active_projects = project_repo.list_active()
 
-    # Filter out focus sessions from monthly overview
-    deadlines = [t for t in upcoming if t.source != "ai_plan"]
+    # Filter out AI breakdowns from the regular deadlines list
+    deadlines = [t for t in upcoming if t.source not in ("ai_plan", "ai_breakdown")]
     exams = [t for t in deadlines if is_exam(t.title)]
     tasks = [t for t in deadlines if not is_exam(t.title)]
 
@@ -209,8 +209,8 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
         lines.append(f"🟡 *Active Projects*")
         for p in active_projects:
             due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
-            hours = f"{p.estimated_hours}h" if p.estimated_hours else "unestimated"
-            lines.append(f"· {p.title} · _{hours} · due {due_str}_")
+            pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
+            lines.append(f"· {p.title} · _{len(pending)} tasks left · due {due_str}_")
             lines.append("")
 
     if not deadlines and not active_projects:
@@ -226,11 +226,10 @@ def project_list(project_repo: ProjectRepo) -> str:
 
     lines = ["● 🟡 *Active Projects*\n"]
     for p in active:
-        pending = [t for t in p.tasks if t.status == TaskStatus.pending]
+        pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
         due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
-        hours = f"{p.estimated_hours}h" if p.estimated_hours else "unestimated"
         lines.append(f"· *{p.title}*")
-        lines.append(f"  _{len(pending)} sessions left · {hours} · due {due_str}_")
+        lines.append(f"  _{len(pending)} tasks left · due {due_str}_")
         lines.append("")
     return "\n".join(lines)
 

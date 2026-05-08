@@ -88,12 +88,12 @@ class TaskRepo:
         self.engine = engine
 
     def run_migrations(self) -> None:
-        """One-time fix: clear scheduled_date for non-AI-planned tasks so they
+        """One-time fix: clear scheduled_date for non-AI tasks so they
         appear via due_date-based upcoming() queries instead of for_date()."""
         with Session(self.engine) as s:
             s.execute(
                 update(Task)
-                .where(Task.source != "ai_plan", Task.scheduled_date != None)
+                .where(Task.source.not_in(["ai_plan", "ai_breakdown"]), Task.scheduled_date != None)
                 .values(scheduled_date=None)
             )
             s.commit()
@@ -155,33 +155,29 @@ class TaskRepo:
                 .where(Task.source == "canvas", Task.gcal_synced == False, Task.due_date != None)
             ))
 
-    def has_ai_sessions_for_title(self, project_title: str) -> bool:
-        """Return True if study sessions already exist for a project with this title.
-
-        AI study session tasks are titled '<project_title> — <focus>', so a prefix
-        match is exact enough without any fuzzy logic.
-        """
+    def has_ai_tasks_for_title(self, project_title: str) -> bool:
+        """Return True if AI-generated tasks (plan or breakdown) already exist for this project title."""
         with Session(self.engine) as s:
             return s.scalar(
                 select(Task.id)
-                .where(Task.source == "ai_plan", Task.title.like(project_title + " —%"))
+                .where(Task.source.in_(["ai_plan", "ai_breakdown"]), Task.title.like(project_title + " —%"))
                 .limit(1)
             ) is not None
 
-    def delete_ai_sessions(self, project_id: int) -> int:
-        """Delete all AI-planned study sessions for a project. Returns count deleted."""
+    def delete_ai_tasks(self, project_id: int) -> int:
+        """Delete all AI-generated tasks (plan or breakdown) for a project. Returns count deleted."""
         with Session(self.engine) as s:
             result = s.execute(
                 delete(Task)
-                .where(Task.project_id == project_id, Task.source == "ai_plan")
+                .where(Task.project_id == project_id, Task.source.in_(["ai_plan", "ai_breakdown"]))
             )
             s.commit()
             return result.rowcount
 
-    def delete_all_ai_sessions(self) -> int:
-        """Delete all AI-planned study sessions across all projects. Returns count deleted."""
+    def delete_all_ai_tasks(self) -> int:
+        """Delete all AI-generated tasks across all projects. Returns count deleted."""
         with Session(self.engine) as s:
-            result = s.execute(delete(Task).where(Task.source == "ai_plan"))
+            result = s.execute(delete(Task).where(Task.source.in_(["ai_plan", "ai_breakdown"])))
             s.commit()
             return result.rowcount
 

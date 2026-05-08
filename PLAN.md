@@ -1,46 +1,29 @@
-# Codebase Improvement Plan
+# Project Plan: Interactive Project Checklists
 
-This plan outlines the steps to address the logical and architectural issues identified in the codebase audit.
+## Status: Completed ✅
 
-## Phase 0: Testing & Stability
+## Objective
+Replace rigid, automatically scheduled study blocks with a flexible, interactive checklist system that uses project rubrics/notes for better task breakdown.
 
-- [x] **Implement Formal Testing Suite:**
-    - Set up `pytest` environment and `conftest.py`.
-    - Add unit tests for `db/repository.py`, `ai/extractor.py`, `ai/estimator.py`, and `bot/messages.py`.
-    - **Bug Fixes identified during testing:**
-        - Fixed `InvalidRequestError` in `ProjectRepo.list_unconfirmed` and `list_active` (missing `.unique()` call for joined eager loads).
-        - Fixed whitespace handling in `ai/extractor._normalize_title`.
+## Completed Tasks
+- [x] **Phase 1: Database & Dependencies**
+    - Added `pypdf` and `python-docx` for document parsing.
+    - Added `context_notes` column to `Project` model.
+    - Implemented database migration logic in `main.py`.
+- [x] **Phase 2: Workflow & Extraction**
+    - Implemented `integrations/document_parser.py` for PDF/DOCX text extraction.
+    - Created `/checklist` conversation flow in `bot/conversations.py`.
+    - Updated sync logic in `bot/telegram_bot.py` and `scheduler/jobs.py` to create reminder tasks instead of immediate AI estimation.
+- [x] **Phase 3: AI Generation & Task Creation**
+    - Updated `ESTIMATION_PROMPT` in `ai/estimator.py` to generate actionable checklists (sub-tasks).
+    - Updated `confirm_estimate` to save sub-tasks with `source="ai_breakdown"`.
+    - Updated message formatters in `bot/messages.py` to display checklists in digests.
+- [x] **Phase 4: Testing & Verification**
+    - Updated `tests/test_estimator.py` to match the new JSON schema.
+    - Updated `tests/test_exams.py` to use `ai_breakdown`.
+    - Verified all 20 tests pass.
+    - Updated repository methods to handle both legacy `ai_plan` and new `ai_breakdown` tasks.
 
-## Phase 1: Efficiency & Reliability (Immediate Fixes)
-
-- [x] **Fix Inefficient Migrations:** 
-    - Move `_migrate_scheduled_dates` from `TaskRepo.__init__` to a one-time startup sequence in `main.py`.
-    - Ensure all schema changes are handled centrally at startup.
-- [ ] **Improve Error Transparency:**
-    - Refactor `integrations/` to avoid broad `try-except Exception` blocks that return empty results silently.
-    - Implement specific exception handling (e.g., `googleapiclient.errors.HttpError`) and bubble up meaningful errors to the UI/Telegram logs.
-
-## Phase 2: Data Integrity & AI Robustness
-
-- [ ] **Atomic Sync Transactions:**
-    - Wrap the sync process in a more robust transaction management system.
-    - Ensure that database writes and external API "write-backs" (like GCal event creation) are synchronized or idempotent.
-- [ ] **Strict AI Validation:**
-    - Implement a validation layer (e.g., using Pydantic or a dedicated schema validator) for AI-generated JSON.
-    - Add retry logic for malformed AI responses.
-- [ ] **Robust Deduplication:**
-    - Move away from simple fuzzy matching for projects.
-    - Use a combination of `source_id`, date ranges, and more sophisticated similarity checks (possibly AI-assisted or stricter thresholding).
-
-## Phase 3: Scalability
-
-- [ ] **Database Optimization:**
-    - Evaluate moving from SQLite to PostgreSQL if the user base or task volume grows.
-    - Optimize long-running sync operations to prevent "Database is locked" errors.
-
-## Phase 4: User Experience & New Features
-
-- [x] **Exams Command & Color-Coded Titles:**
-    - Implement `/exams` command for 6-month exam outlook.
-    - Use colored emojis (🟢, 🟠, 🔴) for Focus Sessions, Tasks, and Exams across all digests.
-    - Implement keyword-based exam identification (exam, quiz, midterm, final, test, assessment).
+## Next Steps
+- Monitor AI performance with complex rubrics.
+- Consider adding a way to "re-generate" a checklist if the first one wasn't good enough (already partially supported by clearing and re-running).

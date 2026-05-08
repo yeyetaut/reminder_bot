@@ -311,26 +311,26 @@ async def cmd_clear_study_session(update: Update, context: ContextTypes.DEFAULT_
         return
 
     project = active[idx]
-    deleted = task_repo.delete_ai_sessions(project.id)
+    deleted = task_repo.delete_ai_tasks(project.id)
     cal_deleted = delete_study_events(project.title)
     project_repo.reset_confirmation(project.id)
     await update.message.reply_text(
-        f"🗑️ Cleared {deleted} study session{'s' if deleted != 1 else ''} for *{project.title}*"
+        f"🗑️ Cleared {deleted} AI task{'s' if deleted != 1 else ''} for *{project.title}*"
         f" and {cal_deleted} Google Calendar event{'s' if cal_deleted != 1 else ''}\\.\n"
-        "Project reset to unconfirmed — run /sync or /totalsync to re\\-estimate\\.",
+        "Project reset to unconfirmed — run /checklist to re\\-generate breakdown\\.",
         parse_mode="Markdown",
     )
 
 
 async def cmd_clear_all_study_sessions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Delete all AI-planned study sessions across every project."""
+    """Delete all AI-generated tasks across every project."""
     task_repo, project_repo, _ = _repos(context)
-    deleted = task_repo.delete_all_ai_sessions()
+    deleted = task_repo.delete_all_ai_tasks()
     cal_deleted = delete_study_events()  # deletes all [Study] events
     for project in project_repo.list_all():
         project_repo.reset_confirmation(project.id)
     await update.message.reply_text(
-        f"🗑️ Cleared {deleted} study session{'s' if deleted != 1 else ''} across all projects"
+        f"🗑️ Cleared {deleted} AI task{'s' if deleted != 1 else ''} across all projects"
         f" and {cal_deleted} Google Calendar event{'s' if cal_deleted != 1 else ''}\\.\n"
         "All projects reset to unconfirmed\\.",
         parse_mode="Markdown",

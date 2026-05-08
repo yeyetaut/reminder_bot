@@ -120,32 +120,38 @@ async def job_auto_sync(bot, engine):
             project_repo=project_repo,
         )
 
-        # No notification — morning digest (7:30) covers new tasks
-
         # Add new non-calendar tasks to Google Calendar as deadline events
         from integrations.google_calendar import create_deadline_event
         for task in new_tasks:
             if task.source != "google_calendar" and task.due_date:
                 create_deadline_event(
-                    title=task.title,
+                    title=f"[Deadline] {task.title}",
                     date_str=task.due_date.isoformat(),
                     description=task.description or "",
                 )
 
-        # Send estimate proposals for new projects (skip if already planned)
+        # Create reminder tasks for new projects
+        from db.models import Task, TaskStatus
         for project in new_projects:
-            if task_repo.has_ai_sessions_for_title(project.title) or project_repo.is_already_planned(project.title):
-                logger.info(f"Auto-sync: skipping proposal for '{project.title}' — already planned")
-                continue
-            proposal = estimate_project(project)
-            if proposal:
-                from ai.estimator import format_proposal_message as fmt
-                text = fmt(proposal)
-                await bot.send_message(
-                    chat_id=config.TELEGRAM_CHAT_ID,
-                    text=text,
-                    parse_mode="Markdown",
-                )
+            reminder = Task(
+                project_id=project.id,
+                title=f"Upload context/rubric for {project.title}",
+                description=f"Send a PDF or notes to the bot to generate a checklist for this project.",
+                due_date=project.due_date,
+                source="reminder",
+                status=TaskStatus.pending,
+            )
+            task_repo.save(reminder)
+            # Notify user about new project and the need for rubric
+            await bot.send_message(
+                chat_id=config.TELEGRAM_CHAT_ID,
+                text=(
+                    f"🆕 *New Project:* {project.title}\n"
+                    f"I've added a task to upload a rubric/notes so I can break this down for you. "
+                    "Use /checklist to start."
+                ),
+                parse_mode="Markdown"
+            )
 
         logger.info(f"Auto-sync complete: {len(new_tasks)} tasks, {len(new_projects)} projects")
 
