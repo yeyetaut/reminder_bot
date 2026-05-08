@@ -17,7 +17,7 @@ from db.repository import TaskRepo, ProjectRepo, DailyPlanRepo
 from db.models import TaskStatus
 from bot.messages import (
     morning_digest, evening_recap, weekly_overview, monthly_overview,
-    project_list, exams_overview
+    project_list, exams_overview, get_morning_digest_buttons
 )
 from bot.conversations import send_proposal, confirm_estimate, adjust_hours, skip_estimate
 from ai.extractor import extract_and_save
@@ -105,7 +105,48 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task_repo, project_repo, _ = _repos(context)
-    await update.message.reply_text(morning_digest(task_repo, project_repo), parse_mode="Markdown")
+    text = morning_digest(task_repo, project_repo)
+    buttons = get_morning_digest_buttons(task_repo, project_repo)
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=buttons)
+
+
+async def handle_callback_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle clicking the 'Done' button in the digest."""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    if not data.startswith("done_"):
+        return
+    
+    task_id = int(data.split("_")[1])
+    task_repo, project_repo, _ = _repos(context)
+    
+    task = task_repo.get_by_id(task_id)
+    if not task:
+        # Just remove the buttons if task is gone
+        new_text = morning_digest(task_repo, project_repo)
+        new_buttons = get_morning_digest_buttons(task_repo, project_repo)
+        await query.edit_message_text(new_text, parse_mode="Markdown", reply_markup=new_buttons)
+        return
+        
+    task_repo.mark_done(task_id)
+    
+    # Update the digest message (remove the button for this task)
+    new_text = morning_digest(task_repo, project_repo)
+    new_buttons = get_morning_digest_buttons(task_repo, project_repo)
+    
+    await query.edit_message_text(
+        new_text, 
+        parse_mode="Markdown", 
+        reply_markup=new_buttons
+    )
+    # Optionally notify the user
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"✅ Marked as done: *{task.title}*",
+        parse_mode="Markdown"
+    )
 
 
 async def cmd_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -330,6 +371,10 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("snooze", cmd_snooze))
     app.add_handler(CommandHandler("sync", cmd_sync))
     app.add_handler(CommandHandler("totalsync", cmd_total_sync))
+    
+    # Handle 'Done' buttons
+    from telegram.ext import CallbackQueryHandler
+    app.add_handler(CallbackQueryHandler(handle_callback_done, pattern="^done_"))
     
     # Register conversation handler AFTER explicit commands to ensure / commands have priority.
     from bot.conversations import build_estimate_conversation

@@ -14,7 +14,7 @@ import pytz
 
 import config
 from db.repository import TaskRepo, ProjectRepo
-from bot.messages import morning_digest, evening_recap, weekly_overview, monthly_overview
+from bot.messages import morning_digest, evening_recap, weekly_overview, monthly_overview, get_morning_digest_buttons
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +24,15 @@ logger = logging.getLogger(__name__)
 async def job_morning_digest(bot, engine):
     """Send today's task list every morning."""
     try:
-        text = morning_digest(TaskRepo(engine), ProjectRepo(engine))
+        task_repo = TaskRepo(engine)
+        project_repo = ProjectRepo(engine)
+        text = morning_digest(task_repo, project_repo)
+        buttons = get_morning_digest_buttons(task_repo, project_repo)
         await bot.send_message(
             chat_id=config.TELEGRAM_CHAT_ID,
             text=text,
             parse_mode="Markdown",
+            reply_markup=buttons,
         )
         logger.info("Morning digest sent")
     except Exception as e:

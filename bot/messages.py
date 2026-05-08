@@ -55,7 +55,7 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
         return "\n".join(lines)
 
     if active_projects:
-        lines.append("📋 *Projects*")
+        lines.append("🟡 *Projects*")
         project_displayed = False
         for p in active_projects:
             pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
@@ -79,7 +79,7 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
             lines.pop()
 
     if tasks:
-        lines.append("🟠 *Deadlines & Tasks*")
+        lines.append("🟢 *Deadlines & Tasks*")
         for task in tasks:
             label = _due_label(task)
             lines.append(f"· {task.title}{label}")
@@ -133,7 +133,7 @@ def evening_recap(task_repo: TaskRepo) -> str:
             lines.append("")
 
     if tomorrow_tasks:
-        lines.append("🟠 *Coming up next*")
+        lines.append("🟢 *Coming up next*")
         for t in tomorrow_tasks:
             lines.append(f"· {t.title}{_due_label(t)}")
             lines.append("")
@@ -154,7 +154,7 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     lines = [f"● *Weekly Overview · week of {today.strftime('%b %d')}*\n"]
 
     if tasks:
-        lines.append(f"🟠 *Tasks ({len(tasks)})*")
+        lines.append(f"🟢 *Tasks ({len(tasks)})*")
         for t in tasks:
             lines.append(f"· {t.title}{_due_label(t)}")
             lines.append("")
@@ -166,7 +166,7 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
             lines.append("")
 
     if active_projects:
-        lines.append(f"🟠 *Projects ({len(active_projects)})*")
+        lines.append(f"🟡 *Projects ({len(active_projects)})*")
         for p in active_projects:
             pending = [t for t in p.tasks if t.status == TaskStatus.pending]
             due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
@@ -192,7 +192,7 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     lines = [f"● *Monthly Overview · {today.strftime('%B %Y')}*\n"]
 
     if tasks:
-        lines.append(f"🟠 *Deadlines ({len(tasks)})*")
+        lines.append(f"🟢 *Deadlines ({len(tasks)})*")
         for t in tasks:
             due = t.due_date.strftime('%b %d') if t.due_date else "?"
             lines.append(f"· {due} · {t.title}")
@@ -206,7 +206,7 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
             lines.append("")
 
     if active_projects:
-        lines.append(f"🟠 *Active Projects*")
+        lines.append(f"🟡 *Active Projects*")
         for p in active_projects:
             due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
             hours = f"{p.estimated_hours}h" if p.estimated_hours else "unestimated"
@@ -224,7 +224,7 @@ def project_list(project_repo: ProjectRepo) -> str:
     if not active:
         return "_No active projects right now._"
 
-    lines = ["● 🟠 *Active Projects*\n"]
+    lines = ["● 🟡 *Active Projects*\n"]
     for p in active:
         pending = [t for t in p.tasks if t.status == TaskStatus.pending]
         due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
@@ -254,3 +254,33 @@ def exams_overview(task_repo: TaskRepo) -> str:
         lines.append("")
         
     return "\n".join(lines)
+
+
+def get_morning_digest_buttons(task_repo: TaskRepo, project_repo: ProjectRepo):
+    """Generate an InlineKeyboardMarkup with 'Done' buttons for visible tasks."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    
+    # 1. Deadlines (next 4 days)
+    upcoming = task_repo.upcoming(days=4)
+    deadlines = [t for t in upcoming if t.source != "ai_breakdown" and not is_exam(t.title)]
+    
+    # 2. Project Sub-tasks (top 3 for each)
+    active_projects = project_repo.list_active()
+    
+    buttons = []
+    
+    # Add project sub-tasks first (matches digest order)
+    for p in active_projects:
+        pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
+        for st in pending[:3]:
+            label = st.title.split(" — ")[-1] if " — " in st.title else st.title
+            buttons.append([InlineKeyboardButton(f"✅ {label}", callback_data=f"done_{st.id}")])
+
+    # Add regular deadlines
+    for t in deadlines:
+        buttons.append([InlineKeyboardButton(f"✅ {t.title}", callback_data=f"done_{t.id}")])
+
+    if not buttons:
+        return None
+        
+    return InlineKeyboardMarkup(buttons)

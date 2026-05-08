@@ -20,7 +20,7 @@ def test_morning_digest_with_projects(engine):
     
     digest = morning_digest(task_repo, project_repo)
     
-    assert "📋 *Projects*" in digest
+    assert "🟡 *Projects*" in digest
     assert "Big Research Paper" in digest
     assert "Step 1" in digest
     assert "Step 2" in digest

@@ -40,7 +40,7 @@ def test_morning_digest_split_exams(engine):
     
     digest = morning_digest(task_repo, project_repo)
     
-    assert "🟠 *Deadlines & Tasks*" in digest
+    assert "🟢 *Deadlines & Tasks*" in digest
     assert "Homework 1" in digest
     
     assert "🔴 *Exams*" in digest
