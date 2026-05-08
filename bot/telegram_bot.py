@@ -73,12 +73,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/projects — active projects\n"
         "/sync — fetch today's new emails\n"
         "/totalsync — full sync \\(last 14 days of emails \\+ 30 days calendar\\)\n"
+        "/checklist — generate a checklist for a project \\(upload rubrics\\)\n"
         "/done <number\\|title> — mark a task complete\n"
         "/snooze <number\\|title> — push task to tomorrow\n"
-        "/clear\\_study\\_session <number> — remove study sessions for a project\n"
-        "/clear\\_all\\_study\\_sessions — remove all study sessions\n"
         "/weekly — weekly overview\n"
         "/monthly — monthly overview\n"
+        "/exams — upcoming exams\n"
         "/status — check database status",
         parse_mode="Markdown",
     )
@@ -319,11 +319,6 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app = builder.build()
     app.bot_data["engine"] = engine
 
-    # Register conversation handler BEFORE commands if we want it to have priority for its states,
-    # but the entry point must be restrictive to not steal commands.
-    from bot.conversations import build_estimate_conversation
-    app.add_handler(build_estimate_conversation())
-
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("projects", cmd_projects))
@@ -335,8 +330,10 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("snooze", cmd_snooze))
     app.add_handler(CommandHandler("sync", cmd_sync))
     app.add_handler(CommandHandler("totalsync", cmd_total_sync))
-    app.add_handler(CommandHandler("clear_study_session", cmd_clear_study_session))
-    app.add_handler(CommandHandler("clear_all_study_sessions", cmd_clear_all_study_sessions))
     
+    # Register conversation handler AFTER explicit commands to ensure / commands have priority.
+    from bot.conversations import build_estimate_conversation
+    app.add_handler(build_estimate_conversation())
+
     logger.info("Telegram bot handlers registered")
     return app

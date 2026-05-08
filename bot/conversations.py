@@ -27,26 +27,78 @@ from integrations.google_calendar import create_event
 logger = logging.getLogger(__name__)
 
 # ConversationHandler states
-AWAITING_CONFIRMATION = 1
-AWAITING_PROJECT_SELECTION = 2
+AWAITING_PROJECT_SELECTION = 1
+AWAITING_FILE_UPLOAD = 2
+AWAITING_CONFIRMATION = 3
 
 # Keys used to store state in user context
 PENDING_PROPOSALS_KEY = "pending_proposals"
-PENDING_CONTEXT_KEY = "pending_context"
+SELECTED_PROJECT_KEY = "selected_project_id"
 
 
 def _get_proposals(context: ContextTypes.DEFAULT_TYPE) -> list:
     return context.bot_data.setdefault(PENDING_PROPOSALS_KEY, [])
 
 
-async def handle_context_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Triggered when a document or long text is received. Extracts text and asks for project."""
+async def start_checklist_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Entry point: User runs /checklist."""
+    _, project_repo, _ = _repos(context)
+    unconfirmed = project_repo.list_unconfirmed()
+    
+    if not unconfirmed:
+        await update.message.reply_text(
+            "There are no pending projects to generate a checklist for. "
+            "Run /sync first to detect new projects."
+        )
+        return ConversationHandler.END
+
+    lines = ["📝 *Which project do you want to generate a checklist for?*"]
+    for i, p in enumerate(unconfirmed):
+        lines.append(f"{i+1}. {p.title}")
+    
+    lines.append("\nReply with the project number or /cancel to abort.")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    return AWAITING_PROJECT_SELECTION
+
+
+async def select_project(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """User replied with a project number."""
+    if not update.message.text or not update.message.text.isdigit():
+        await update.message.reply_text("Please enter a valid project number or /cancel.")
+        return AWAITING_PROJECT_SELECTION
+
+    idx = int(update.message.text) - 1
+    _, project_repo, _ = _repos(context)
+    unconfirmed = project_repo.list_unconfirmed()
+
+    if idx < 0 or idx >= len(unconfirmed):
+        await update.message.reply_text(f"Invalid number. Choose 1 to {len(unconfirmed)} or /cancel.")
+        return AWAITING_PROJECT_SELECTION
+
+    project = unconfirmed[idx]
+    context.user_data[SELECTED_PROJECT_KEY] = project.id
+    
+    await update.message.reply_text(
+        f"Selected: *{project.title}*\n\n"
+        "Please upload a PDF, Word document, or paste the text instructions/rubric for this project. "
+        "(Or type 'skip' to generate a generic checklist without notes).",
+        parse_mode="Markdown"
+    )
+    return AWAITING_FILE_UPLOAD
+
+
+async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """User uploaded a file or text."""
     text = ""
-    if update.message.document:
+    
+    # Check for 'skip'
+    if update.message.text and update.message.text.lower() == 'skip':
+        text = ""
+    elif update.message.document:
         doc = update.message.document
         if not doc.file_name.lower().endswith(('.pdf', '.docx')):
-            await update.message.reply_text("Please upload a PDF or Word (.docx) file.")
-            return ConversationHandler.END
+            await update.message.reply_text("Please upload a PDF or Word (.docx) file, or type 'skip'.")
+            return AWAITING_FILE_UPLOAD
         
         await update.message.reply_text("Parsing document... ⏳")
         file = await context.bot.get_file(doc.file_id)
@@ -57,83 +109,43 @@ async def handle_context_upload(update: Update, context: ContextTypes.DEFAULT_TY
             text = extract_text_from_pdf(file_bytes)
         else:
             text = extract_text_from_docx(file_bytes)
+            
+        if not text:
+            await update.message.reply_text("Could not extract text. Please try copy-pasting it or type 'skip'.")
+            return AWAITING_FILE_UPLOAD
     else:
-        # Long text message
         text = update.message.text
-        if len(text) < 100:
-            # Too short to be a rubric, probably just chatting. Skip.
-            return ConversationHandler.END
 
-    if not text:
-        await update.message.reply_text("Could not extract any text from that. Try copy-pasting it?")
-        return ConversationHandler.END
-
-    # Store text temporarily
-    context.user_data[PENDING_CONTEXT_KEY] = text
-
-    # List unconfirmed projects
-    _, project_repo, _ = _repos(context)
-    unconfirmed = project_repo.list_unconfirmed()
+    project_id = context.user_data.get(SELECTED_PROJECT_KEY)
     
-    if not unconfirmed:
-        await update.message.reply_text(
-            "I found some project context, but there are no pending projects to attach it to. "
-            "Run /sync first to detect new projects."
-        )
-        return ConversationHandler.END
-
-    lines = ["📝 *Which project is this context for?*"]
-    for i, p in enumerate(unconfirmed):
-        lines.append(f"{i+1}. {p.title}")
-    
-    lines.append("\nReply with the project number.")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-    return AWAITING_PROJECT_SELECTION
-
-
-async def select_project_for_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User replied with a project number. Link the context and offer to generate checklist."""
-    if not update.message.text or not update.message.text.isdigit():
-        await update.message.reply_text("Please enter a valid project number.")
-        return AWAITING_PROJECT_SELECTION
-
-    idx = int(update.message.text) - 1
-    _, project_repo, _ = _repos(context)
-    unconfirmed = project_repo.list_unconfirmed()
-
-    if idx < 0 or idx >= len(unconfirmed):
-        await update.message.reply_text(f"Invalid number. Choose 1 to {len(unconfirmed)}.")
-        return AWAITING_PROJECT_SELECTION
-
-    project = unconfirmed[idx]
-    context_text = context.user_data.pop(PENDING_CONTEXT_KEY, "")
-    
-    # Save to DB
-    from sqlalchemy import update as sa_update
-    from db.models import Project
     engine = context.bot_data["engine"]
     from sqlalchemy.orm import Session
-    with Session(engine) as s:
-        s.execute(
-            sa_update(Project)
-            .where(Project.id == project.id)
-            .values(context_notes=context_text)
-        )
-        s.commit()
+    from db.models import Project
+    from sqlalchemy import update as sa_update
     
-    await update.message.reply_text(
-        f"✅ Context attached to *{project.title}*!\n\n"
-        "I'll use this to generate a more comprehensive checklist. "
-        "Generating now... 🤖",
-        parse_mode="Markdown"
-    )
+    with Session(engine) as s:
+        if text:
+            s.execute(
+                sa_update(Project)
+                .where(Project.id == project_id)
+                .values(context_notes=text)
+            )
+            s.commit()
+        project = s.get(Project, project_id)
 
-    # Trigger AI breakdown (Phase 3 will refine this)
-    # For now, just a placeholder or call existing estimator
-    proposal = estimate_project(project) # This will be updated to use context_notes in Phase 3
+    await update.message.reply_text("Generating checklist using AI... 🤖")
+
+    proposal = estimate_project(project) 
     if proposal:
         await send_proposal(context, update.effective_chat.id, proposal)
-    
+    else:
+         await update.message.reply_text("Failed to generate checklist. Please try again later.")
+         
+    return AWAITING_CONFIRMATION
+
+
+async def cancel_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Cancelled.")
     return ConversationHandler.END
 
 
@@ -331,21 +343,23 @@ async def skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 def build_estimate_conversation() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Document.ALL | (filters.TEXT & ~filters.COMMAND & filters.Regex(r'^.{100,}$')), handle_context_upload)
+            CommandHandler("checklist", start_checklist_flow)
         ],
         states={
+            AWAITING_PROJECT_SELECTION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, select_project)
+            ],
+            AWAITING_FILE_UPLOAD: [
+                MessageHandler(filters.Document.ALL | (filters.TEXT & ~filters.COMMAND), handle_file_upload)
+            ],
             AWAITING_CONFIRMATION: [
                 CommandHandler("confirm_estimate", confirm_estimate),
-                CommandHandler("adjust_hours", adjust_hours),
                 CommandHandler("skip_estimate", skip_estimate),
-            ],
-            AWAITING_PROJECT_SELECTION: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, select_project_for_context)
             ]
         },
         fallbacks=[
-            CommandHandler("cancel", lambda u, c: ConversationHandler.END)
+            CommandHandler("cancel", cancel_flow)
         ],
         persistent=False,
-        name="estimate_flow",
+        name="checklist_flow",
     )
