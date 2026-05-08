@@ -28,13 +28,120 @@ logger = logging.getLogger(__name__)
 
 # ConversationHandler states
 AWAITING_CONFIRMATION = 1
+AWAITING_PROJECT_SELECTION = 2
 
-# Key used to store list of pending proposals in user context
+# Keys used to store state in user context
 PENDING_PROPOSALS_KEY = "pending_proposals"
+PENDING_CONTEXT_KEY = "pending_context"
 
 
 def _get_proposals(context: ContextTypes.DEFAULT_TYPE) -> list:
     return context.bot_data.setdefault(PENDING_PROPOSALS_KEY, [])
+
+
+async def handle_context_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Triggered when a document or long text is received. Extracts text and asks for project."""
+    text = ""
+    if update.message.document:
+        doc = update.message.document
+        if not doc.file_name.lower().endswith(('.pdf', '.docx')):
+            await update.message.reply_text("Please upload a PDF or Word (.docx) file.")
+            return ConversationHandler.END
+        
+        await update.message.reply_text("Parsing document... ⏳")
+        file = await context.bot.get_file(doc.file_id)
+        file_bytes = await file.download_as_bytearray()
+        
+        from integrations.document_parser import extract_text_from_pdf, extract_text_from_docx
+        if doc.file_name.lower().endswith('.pdf'):
+            text = extract_text_from_pdf(file_bytes)
+        else:
+            text = extract_text_from_docx(file_bytes)
+    else:
+        # Long text message
+        text = update.message.text
+        if len(text) < 100:
+            # Too short to be a rubric, probably just chatting. Skip.
+            return ConversationHandler.END
+
+    if not text:
+        await update.message.reply_text("Could not extract any text from that. Try copy-pasting it?")
+        return ConversationHandler.END
+
+    # Store text temporarily
+    context.user_data[PENDING_CONTEXT_KEY] = text
+
+    # List unconfirmed projects
+    _, project_repo, _ = _repos(context)
+    unconfirmed = project_repo.list_unconfirmed()
+    
+    if not unconfirmed:
+        await update.message.reply_text(
+            "I found some project context, but there are no pending projects to attach it to. "
+            "Run /sync first to detect new projects."
+        )
+        return ConversationHandler.END
+
+    lines = ["📝 *Which project is this context for?*"]
+    for i, p in enumerate(unconfirmed):
+        lines.append(f"{i+1}. {p.title}")
+    
+    lines.append("\nReply with the project number.")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    return AWAITING_PROJECT_SELECTION
+
+
+async def select_project_for_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """User replied with a project number. Link the context and offer to generate checklist."""
+    if not update.message.text or not update.message.text.isdigit():
+        await update.message.reply_text("Please enter a valid project number.")
+        return AWAITING_PROJECT_SELECTION
+
+    idx = int(update.message.text) - 1
+    _, project_repo, _ = _repos(context)
+    unconfirmed = project_repo.list_unconfirmed()
+
+    if idx < 0 or idx >= len(unconfirmed):
+        await update.message.reply_text(f"Invalid number. Choose 1 to {len(unconfirmed)}.")
+        return AWAITING_PROJECT_SELECTION
+
+    project = unconfirmed[idx]
+    context_text = context.user_data.pop(PENDING_CONTEXT_KEY, "")
+    
+    # Save to DB
+    from sqlalchemy import update as sa_update
+    from db.models import Project
+    engine = context.bot_data["engine"]
+    from sqlalchemy.orm import Session
+    with Session(engine) as s:
+        s.execute(
+            sa_update(Project)
+            .where(Project.id == project.id)
+            .values(context_notes=context_text)
+        )
+        s.commit()
+    
+    await update.message.reply_text(
+        f"✅ Context attached to *{project.title}*!\n\n"
+        "I'll use this to generate a more comprehensive checklist. "
+        "Generating now... 🤖",
+        parse_mode="Markdown"
+    )
+
+    # Trigger AI breakdown (Phase 3 will refine this)
+    # For now, just a placeholder or call existing estimator
+    proposal = estimate_project(project) # This will be updated to use context_notes in Phase 3
+    if proposal:
+        await send_proposal(context, update.effective_chat.id, proposal)
+    
+    return ConversationHandler.END
+
+
+def _repos(context: ContextTypes.DEFAULT_TYPE):
+    # Helper to get repos from bot_data engine
+    from db.repository import TaskRepo, ProjectRepo, DailyPlanRepo
+    engine = context.bot_data["engine"]
+    return TaskRepo(engine), ProjectRepo(engine), DailyPlanRepo(engine)
 
 
 async def send_proposal(
@@ -88,7 +195,7 @@ def _resolve_proposal(context: ContextTypes.DEFAULT_TYPE, args) -> tuple:
 
 
 async def confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User accepted the AI estimate — create daily Task rows and Google Calendar events."""
+    """User accepted the AI checklist — create Task rows."""
     proposal, idx, err = _resolve_proposal(context, context.args)
     if err:
         await update.message.reply_text(err, parse_mode="Markdown")
@@ -99,54 +206,32 @@ async def confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     project_repo = ProjectRepo(engine)
 
     project_id = proposal["project_id"]
-    estimated_hours = proposal["estimated_hours"]
-    sessions = proposal.get("daily_sessions", [])
+    sub_tasks = proposal.get("sub_tasks", [])
 
-    # Save daily task sessions
-    from datetime import date as date_type
+    # Save sub-tasks
     tasks = []
-    for session in sessions:
-        session_date = date_type.fromisoformat(session["date"]) if isinstance(session["date"], str) else session["date"]
+    for st in sub_tasks:
         task = Task(
             project_id=project_id,
-            title=f"{proposal['project_title']} — {session['focus']}",
-            description=session["focus"],
-            scheduled_date=session_date,
-            due_date=session_date,
-            source="ai_plan",
+            title=f"{proposal['project_title']} — {st['title']}",
+            description=st['description'],
+            scheduled_date=None,  # No rigid schedule
+            due_date=None,
+            source="ai_breakdown",
             status=TaskStatus.pending,
         )
         tasks.append(task)
 
-    task_repo.save_many(tasks)
-    project_repo.confirm(project_id, estimated_hours)
-
-    # Write sessions to Google Calendar
-    from integrations.google_calendar import find_event_by_title
-    cal_links = []
-    for session in sessions:
-        title = f"[Study] {proposal['project_title']}"
-        if find_event_by_title(title, session["date"]):
-            logger.info(f"Skipping [Study] event for '{proposal['project_title']}' on {session['date']} — already exists")
-            continue
-
-        link = create_event(
-            title=title,
-            date_str=session["date"],
-            duration_hours=session["hours"],
-            description=session["focus"],
-        )
-        if link:
-            cal_links.append(link)
+    if tasks:
+        task_repo.save_many(tasks)
+    
+    # Mark project as confirmed (estimated_hours is now optional/0)
+    project_repo.confirm(project_id, 0)
 
     reply = (
-        f"✅ Plan confirmed for *{proposal['project_title']}*\\!\n"
-        f"{len(tasks)} work sessions added to your schedule"
+        f"✅ Checklist confirmed for *{proposal['project_title']}*\\!\n"
+        f"{len(tasks)} tasks added to your project breakdown\\."
     )
-    if cal_links:
-        reply += f" and Google Calendar\\."
-    else:
-        reply += "\\."
 
     await update.message.reply_text(reply, parse_mode="Markdown")
     _get_proposals(context).pop(idx)
@@ -245,15 +330,22 @@ async def skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 def build_estimate_conversation() -> ConversationHandler:
     return ConversationHandler(
-        entry_points=[],  # triggered programmatically via send_proposal
+        entry_points=[
+            MessageHandler(filters.Document.ALL | filters.TEXT & ~filters.COMMAND, handle_context_upload)
+        ],
         states={
             AWAITING_CONFIRMATION: [
                 CommandHandler("confirm_estimate", confirm_estimate),
                 CommandHandler("adjust_hours", adjust_hours),
                 CommandHandler("skip_estimate", skip_estimate),
+            ],
+            AWAITING_PROJECT_SELECTION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, select_project_for_context)
             ]
         },
-        fallbacks=[],
+        fallbacks=[
+            CommandHandler("cancel", lambda u, c: ConversationHandler.END)
+        ],
         persistent=False,
         name="estimate_flow",
     )

@@ -15,7 +15,10 @@ from telegram.ext import (
 import config
 from db.repository import TaskRepo, ProjectRepo, DailyPlanRepo
 from db.models import TaskStatus
-from bot.messages import morning_digest, evening_recap, weekly_overview, monthly_overview, project_list
+from bot.messages import (
+    morning_digest, evening_recap, weekly_overview, monthly_overview,
+    project_list, exams_overview
+)
 from bot.conversations import send_proposal, confirm_estimate, adjust_hours, skip_estimate
 from ai.extractor import extract_and_save
 from ai.estimator import estimate_project
@@ -101,8 +104,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    task_repo, _, _ = _repos(context)
-    await update.message.reply_text(morning_digest(task_repo), parse_mode="Markdown")
+    task_repo, project_repo, _ = _repos(context)
+    await update.message.reply_text(morning_digest(task_repo, project_repo), parse_mode="Markdown")
 
 
 async def cmd_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -118,6 +121,11 @@ async def cmd_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task_repo, project_repo, _ = _repos(context)
     await update.message.reply_text(monthly_overview(task_repo, project_repo), parse_mode="Markdown")
+
+
+async def cmd_exams(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    task_repo, _, _ = _repos(context)
+    await update.message.reply_text(exams_overview(task_repo), parse_mode="Markdown")
 
 
 async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -198,12 +206,21 @@ async def _run_sync(update, context, days_back: int, label: str):
                 task_repo.mark_gcal_synced(task.id)
 
     for project in new_projects:
-        if task_repo.has_ai_sessions_for_title(project.title) or project_repo.is_already_planned(project.title):
-            logger.info(f"Skipping proposal for '{project.title}' — already planned")
-            continue
-        proposal = estimate_project(project)
-        if proposal:
-            await send_proposal(context, update.effective_chat.id, proposal)
+        # Instead of immediate AI estimation, create a reminder task to upload context
+        reminder = Task(
+            project_id=project.id,
+            title=f"Upload context/rubric for {project.title}",
+            description=f"Send a PDF or notes to the bot to generate a checklist for this project.",
+            due_date=project.due_date,
+            source="reminder",
+            status=TaskStatus.pending,
+        )
+        task_repo.save(reminder)
+        await update.message.reply_text(
+            f"🆕 *New Project:* {project.title}\n"
+            f"I've added a task to upload a rubric/notes so I can break this down for you.",
+            parse_mode="Markdown"
+        )
 
 
 async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -307,6 +324,7 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("projects", cmd_projects))
     app.add_handler(CommandHandler("weekly", cmd_weekly))
     app.add_handler(CommandHandler("monthly", cmd_monthly))
+    app.add_handler(CommandHandler("exams", cmd_exams))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("done", cmd_done))
     app.add_handler(CommandHandler("snooze", cmd_snooze))
@@ -314,9 +332,10 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("totalsync", cmd_total_sync))
     app.add_handler(CommandHandler("clear_study_session", cmd_clear_study_session))
     app.add_handler(CommandHandler("clear_all_study_sessions", cmd_clear_all_study_sessions))
-    app.add_handler(CommandHandler("confirm_estimate", cmd_confirm_estimate))
-    app.add_handler(CommandHandler("adjust_hours", cmd_adjust_hours))
-    app.add_handler(CommandHandler("skip_estimate", cmd_skip_estimate))
+    
+    # Use the conversation handler for project workflows
+    from bot.conversations import build_estimate_conversation
+    app.add_handler(build_estimate_conversation())
 
     logger.info("Telegram bot handlers registered")
     return app

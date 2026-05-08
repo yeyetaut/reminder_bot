@@ -37,3 +37,10 @@ This plan outlines the steps to address the logical and architectural issues ide
 - [ ] **Database Optimization:**
     - Evaluate moving from SQLite to PostgreSQL if the user base or task volume grows.
     - Optimize long-running sync operations to prevent "Database is locked" errors.
+
+## Phase 4: User Experience & New Features
+
+- [x] **Exams Command & Color-Coded Titles:**
+    - Implement `/exams` command for 6-month exam outlook.
+    - Use colored emojis (🟢, 🟠, 🔴) for Focus Sessions, Tasks, and Exams across all digests.
+    - Implement keyword-based exam identification (exam, quiz, midterm, final, test, assessment).

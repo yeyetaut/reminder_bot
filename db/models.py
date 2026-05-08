@@ -29,6 +29,7 @@ class Project(Base):
     description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     estimated_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    context_notes: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

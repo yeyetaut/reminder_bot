@@ -31,11 +31,12 @@ async def post_shutdown(application):
 
 
 def _migrate(engine):
-    """Apply incremental schema migrations for SQLite."""
+    """Apply incremental schema migrations."""
     from sqlalchemy import text
     with engine.connect() as conn:
         for stmt in [
-            "ALTER TABLE task ADD COLUMN gcal_synced INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE tasks ADD COLUMN gcal_synced INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE projects ADD COLUMN context_notes VARCHAR",
         ]:
             try:
                 conn.execute(text(stmt))

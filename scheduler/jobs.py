@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 async def job_morning_digest(bot, engine):
     """Send today's task list every morning."""
     try:
-        text = morning_digest(TaskRepo(engine))
+        text = morning_digest(TaskRepo(engine), ProjectRepo(engine))
         await bot.send_message(
             chat_id=config.TELEGRAM_CHAT_ID,
             text=text,

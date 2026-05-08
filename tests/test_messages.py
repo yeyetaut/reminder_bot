@@ -21,17 +21,19 @@ def test_due_label():
 
 def test_morning_digest_empty(engine):
     task_repo = TaskRepo(engine)
-    digest = morning_digest(task_repo)
+    project_repo = ProjectRepo(engine)
+    digest = morning_digest(task_repo, project_repo)
     assert "No tasks scheduled" in digest
 
 def test_morning_digest_with_tasks(engine):
     task_repo = TaskRepo(engine)
+    project_repo = ProjectRepo(engine)
     today = date.today()
     
     task_repo.save(Task(title="Today's Task", scheduled_date=today, source="test", status=TaskStatus.pending))
     task_repo.save(Task(title="Upcoming Deadline", due_date=today + timedelta(days=2), source="test", status=TaskStatus.pending))
     
-    digest = morning_digest(task_repo)
+    digest = morning_digest(task_repo, project_repo)
     assert "Today's Task" in digest
     assert "Upcoming Deadline" in digest
     assert "_2d_" in digest

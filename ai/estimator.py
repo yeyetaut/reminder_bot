@@ -16,27 +16,29 @@ from db.models import Project
 logger = logging.getLogger(__name__)
 
 ESTIMATION_PROMPT = """\
-You are a student productivity assistant. Given a project's details, estimate the work required and suggest a daily schedule.
+You are a student productivity assistant. Given a project's details and additional context (like a rubric or notes), break it down into a comprehensive, actionable checklist of sub-tasks.
 
 Project:
 {project_json}
+
+Context/Rubric:
+{context_notes}
 
 Today's date: {today}
 
 Output a single JSON object — nothing else:
 {{
-  "estimated_hours": <number>,
-  "reasoning": "<one sentence why>",
-  "daily_sessions": [
-    {{"date": "YYYY-MM-DD", "hours": <number>, "focus": "<what to work on this day>"}}
+  "reasoning": "<one sentence overview of the project strategy>",
+  "sub_tasks": [
+    {{"title": "<short action title>", "description": "<detailed instruction, max 150 chars>"}}
   ]
 }}
 
 Rules:
-- daily_sessions must start from today or tomorrow and end on or before the due date
-- No session should exceed 3 hours
-- Spread work evenly, avoid the last day being the heaviest
-- If due_date is null or already passed, schedule 3 sessions starting from today
+- sub_tasks should be a logical sequence of steps to complete the project
+- Each sub-task should be a single actionable unit of work
+- Use the provided context/rubric to make tasks specific and relevant
+- Keep titles action-oriented (start with a verb)
 """
 
 
@@ -130,7 +132,7 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
 
 def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
     """
-    Call AI to estimate a project. Returns the parsed proposal dict or None on failure.
+    Call AI to break down a project into a checklist. Returns the parsed proposal dict or None on failure.
     Does NOT save to DB — caller handles confirmation flow.
     """
     today = date.today().isoformat()
@@ -142,6 +144,7 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
 
     prompt = ESTIMATION_PROMPT.format(
         project_json=json.dumps(project_data, indent=2),
+        context_notes=project.context_notes or "No additional notes provided.",
         today=today,
     )
 
@@ -165,20 +168,20 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
 def format_proposal_message(proposal: Dict[str, Any]) -> str:
     """Format an estimation proposal as a Telegram message for user confirmation."""
     lines = [
-        f"● *New Project: {proposal['project_title']}*",
-        f"*Estimated Effort:* {proposal['estimated_hours']} hours",
-        f"*Rationale:* {proposal.get('reasoning', '')}",
+        f"● *Checklist for {proposal['project_title']}*",
+        f"*Strategy:* {proposal.get('reasoning', '')}",
         "",
-        "*Proposed Schedule*",
+        "*Proposed Tasks*",
     ]
-    for session in proposal.get("daily_sessions", []):
-        lines.append(f"· {session['date']} · {session['hours']}h: {session['focus']}")
+    for task in proposal.get("sub_tasks", []):
+        lines.append(f"· *{task['title']}*")
+        lines.append(f"  _{task['description']}_")
         lines.append("") # Extra space
 
     lines += [
         "",
         "---",
-        "✅ /confirm\\_estimate · accept plan",
-        "✏️ /adjust\\_hours <n> · change effort",
+        "✅ /confirm\\_estimate · accept checklist",
+        "⏭️ /skip\\_estimate · ignore for now",
     ]
     return "\n".join(lines)
