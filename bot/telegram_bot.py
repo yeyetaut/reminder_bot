@@ -51,7 +51,7 @@ def _parse_task_ref(args, task_repo: TaskRepo):
         if task and task.status.value == "pending":
             return task
     # Fall back to partial title match across today's visible tasks
-    today = date.today()
+    today = config.get_today()
     planned = task_repo.for_date(today)
     upcoming = task_repo.upcoming(days=7)
     planned_ids = {t.id for t in planned}
@@ -114,40 +114,60 @@ async def handle_callback_done(update: Update, context: ContextTypes.DEFAULT_TYP
     """Handle clicking the 'Done' button in the digest."""
     query = update.callback_query
     await query.answer()
-    
+
     data = query.data
+    logger.info(f"Callback received: {data}")
     if not data.startswith("done_"):
         return
-    
-    task_id = int(data.split("_")[1])
-    task_repo, project_repo, _ = _repos(context)
-    
-    task = task_repo.get_by_id(task_id)
-    if not task:
-        # Just remove the buttons if task is gone
+
+    try:
+        task_id = int(data.split("_")[1])
+        task_repo, project_repo, _ = _repos(context)
+
+        task = task_repo.get_by_id(task_id)
+        if not task:
+            logger.warning(f"Task {task_id} not found for callback")
+            # Just remove the buttons if task is gone
+            new_text = morning_digest(task_repo, project_repo)
+            new_buttons = get_morning_digest_buttons(task_repo, project_repo)
+            try:
+                await query.edit_message_text(new_text, parse_mode="Markdown", reply_markup=new_buttons)
+            except Exception as e:
+                logger.error(f"Failed to edit message for missing task: {e}")
+            return
+
+        if task.status == TaskStatus.done:
+            return
+
+        task_repo.mark_done(task_id)
+        logger.info(f"Task {task_id} ('{task.title}') marked as done via callback")
+
+        # Update the digest message (remove the button for this task)
         new_text = morning_digest(task_repo, project_repo)
         new_buttons = get_morning_digest_buttons(task_repo, project_repo)
-        await query.edit_message_text(new_text, parse_mode="Markdown", reply_markup=new_buttons)
-        return
-        
-    task_repo.mark_done(task_id)
-    
-    # Update the digest message (remove the button for this task)
-    new_text = morning_digest(task_repo, project_repo)
-    new_buttons = get_morning_digest_buttons(task_repo, project_repo)
-    
-    await query.edit_message_text(
-        new_text, 
-        parse_mode="Markdown", 
-        reply_markup=new_buttons
-    )
-    # Optionally notify the user
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=f"✅ Marked as done: *{task.title}*",
-        parse_mode="Markdown"
-    )
 
+        try:
+            await query.edit_message_text(
+                new_text,
+                parse_mode="Markdown",
+                reply_markup=new_buttons
+            )
+        except Exception as e:
+            # If text is identical, Telegram raises BadRequest. We can ignore or log it.
+            if "Message is not modified" in str(e):
+                logger.info("Message not modified, skipping edit")
+            else:
+                logger.error(f"Failed to edit digest message: {e}")
+
+        # Notify the user (escape title for Markdown)
+        safe_title = task.title.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"✅ Marked as done: *{safe_title}*",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.exception(f"Error in handle_callback_done: {e}")
 
 async def cmd_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _, project_repo, _ = _repos(context)
@@ -185,7 +205,7 @@ async def cmd_snooze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not task:
         await update.message.reply_text("Task not found\\. Use /today to see task numbers\\.", parse_mode="Markdown")
         return
-    tomorrow = date.today() + timedelta(days=1)
+    tomorrow = config.get_today() + timedelta(days=1)
     task_repo.reschedule(task.id, tomorrow)
     await update.message.reply_text(f"⏭️ Snoozed to tomorrow: *{task.title}*", parse_mode="Markdown")
 

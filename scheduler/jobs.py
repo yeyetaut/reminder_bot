@@ -73,7 +73,7 @@ async def job_weekly_overview(bot, engine):
 async def job_monthly_overview(bot, engine):
     """Send monthly overview on the last day of the month."""
     # Only send if today is actually the last day of the month
-    today = date.today()
+    today = config.get_today()
     last_day = cal_module.monthrange(today.year, today.month)[1]
     if today.day != last_day:
         return

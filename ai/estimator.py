@@ -135,7 +135,8 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
     Call AI to break down a project into a checklist. Returns the parsed proposal dict or None on failure.
     Does NOT save to DB — caller handles confirmation flow.
     """
-    today = date.today().isoformat()
+    import config
+    today = config.get_today().isoformat()
     project_data = {
         "title": project.title,
         "description": project.description or "",

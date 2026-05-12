@@ -68,7 +68,7 @@ def main():
     app = build_bot(engine, post_init=post_init, post_shutdown=post_shutdown)
 
     logger.info("Polling for Telegram messages...")
-    app.run_polling(allowed_updates=["message"])
+    app.run_polling(allowed_updates=["message", "callback_query"])
 
 
 if __name__ == "__main__":

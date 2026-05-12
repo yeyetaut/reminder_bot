@@ -1,29 +1,16 @@
-# Project Plan: Interactive Project Checklists
+# Reminder Bot - Project Plan
 
-## Status: Completed ✅
+## Bugs Fixed
+- [x] **Timezone Inconsistency in Daily Digest**: Fixed an issue where the morning digest would use the server's local time (UTC) instead of the user's configured timezone.
+- [x] **Non-functional Inline Buttons**: Fixed an issue where 'Done' buttons in Telegram digests were unresponsive because the bot was not listening for `callback_query` updates.
+    - Updated `main.py` to allow `callback_query` updates.
+    - Refined `handle_callback_done` with `python-pro` for idempotency, safer parsing, and robust error handling.
+    - Added a comprehensive test suite with `qa-expert` covering 7 edge cases (idempotency, markdown escaping, API errors, etc.).
 
-## Objective
-Replace rigid, automatically scheduled study blocks with a flexible, interactive checklist system that uses project rubrics/notes for better task breakdown.
+## Process Improvements
+- [x] **Subagent Workflow**: Documented and implemented a mandatory workflow using `python-pro` for code and `qa-expert` for testing in `GEMINI.md`.
 
-## Completed Tasks
-- [x] **Phase 1: Database & Dependencies**
-    - Added `pypdf` and `python-docx` for document parsing.
-    - Added `context_notes` column to `Project` model.
-    - Implemented database migration logic in `main.py`.
-- [x] **Phase 2: Workflow & Extraction**
-    - Implemented `integrations/document_parser.py` for PDF/DOCX text extraction.
-    - Created `/checklist` conversation flow in `bot/conversations.py`.
-    - Updated sync logic in `bot/telegram_bot.py` and `scheduler/jobs.py` to create reminder tasks instead of immediate AI estimation.
-- [x] **Phase 3: AI Generation & Task Creation**
-    - Updated `ESTIMATION_PROMPT` in `ai/estimator.py` to generate actionable checklists (sub-tasks).
-    - Updated `confirm_estimate` to save sub-tasks with `source="ai_breakdown"`.
-    - Updated message formatters in `bot/messages.py` to display checklists in digests.
-- [x] **Phase 4: Testing & Verification**
-    - Updated `tests/test_estimator.py` to match the new JSON schema.
-    - Updated `tests/test_exams.py` to use `ai_breakdown`.
-    - Verified all 20 tests pass.
-    - Updated repository methods to handle both legacy `ai_plan` and new `ai_breakdown` tasks.
-
-## Next Steps
-- Monitor AI performance with complex rubrics.
-- Consider adding a way to "re-generate" a checklist if the first one wasn't good enough (already partially supported by clearing and re-running).
+## Ongoing Tasks
+- [ ] Improve test coverage for other Telegram handlers.
+- [ ] Add integration tests for Google Calendar and Gmail mocks.
+- [ ] Implement robust error handling for AI API failures.

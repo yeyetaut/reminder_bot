@@ -1,4 +1,5 @@
 import os
+from datetime import date, datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,6 +31,22 @@ CANVAS_ICAL_URL: str = os.getenv("CANVAS_ICAL_URL", "")
 
 # Scheduler
 TIMEZONE: str = os.getenv("TIMEZONE", "America/New_York")
+
+
+def get_today() -> date:
+    """Return the current date in the configured TIMEZONE."""
+    import pytz
+    from datetime import datetime
+    tz = pytz.timezone(TIMEZONE)
+    return datetime.now(tz).date()
+
+
+def get_now() -> datetime:
+    """Return the current datetime in the configured TIMEZONE."""
+    import pytz
+    from datetime import datetime
+    tz = pytz.timezone(TIMEZONE)
+    return datetime.now(tz)
 
 # Database
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///reminder_bot.db")

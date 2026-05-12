@@ -5,6 +5,7 @@ All functions return plain Telegram markdown strings.
 from datetime import date, timedelta
 from typing import List
 
+import config
 from db.models import Task, Project, TaskStatus
 from db.repository import TaskRepo, ProjectRepo
 
@@ -13,7 +14,7 @@ def _due_label(task: Task) -> str:
     """Return a human-readable due label like 'today', 'tomorrow', 'in 3 days', or 'overdue'."""
     if not task.due_date:
         return ""
-    today = date.today()
+    today = config.get_today()
     delta = (task.due_date - today).days
     if delta < 0:
         return " ! _overdue_"
@@ -34,7 +35,7 @@ def is_exam(title: str) -> bool:
 
 
 def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
-    today = date.today()
+    today = config.get_today()
 
     # Upcoming deadlines in the next 4 days (includes today)
     upcoming = task_repo.upcoming(days=4)
@@ -113,7 +114,7 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
 
 def evening_recap(task_repo: TaskRepo) -> str:
     """Returns None if there's nothing worth reporting (skip the message)."""
-    today = date.today()
+    today = config.get_today()
     tomorrow = today + timedelta(days=1)
 
     today_tasks = task_repo.for_date(today)
@@ -142,7 +143,7 @@ def evening_recap(task_repo: TaskRepo) -> str:
 
 
 def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
-    today = date.today()
+    today = config.get_today()
     upcoming = task_repo.upcoming(days=7)
     active_projects = project_repo.list_active()
 
@@ -180,7 +181,7 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
 
 
 def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
-    today = date.today()
+    today = config.get_today()
     upcoming = task_repo.upcoming(days=30)
     active_projects = project_repo.list_active()
 

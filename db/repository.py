@@ -3,6 +3,7 @@ from typing import Optional, List
 from sqlalchemy import Engine, select, update, delete
 from sqlalchemy.orm import Session
 
+import config
 from db.models import Project, Task, TaskStatus, DailyPlan
 
 
@@ -183,7 +184,7 @@ class TaskRepo:
 
     def upcoming(self, days: int = 7) -> List[Task]:
         from datetime import timedelta
-        today = date.today()
+        today = config.get_today()
         end = today + timedelta(days=days)
         with Session(self.engine) as s:
             return list(s.scalars(
