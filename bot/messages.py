@@ -260,9 +260,21 @@ def get_morning_digest_buttons(task_repo: TaskRepo, project_repo: ProjectRepo):
     """Generate an InlineKeyboardMarkup with 'Done' buttons for visible tasks."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     
+    today = config.get_today()
+
     # 1. Deadlines (next 4 days)
     upcoming = task_repo.upcoming(days=4)
-    deadlines = [t for t in upcoming if t.source != "ai_breakdown" and not is_exam(t.title)]
+    
+    deadlines = []
+    for t in upcoming:
+        if t.source == "ai_breakdown":
+            continue
+        if is_exam(t.title):
+            # Include exams only if overdue or due today
+            if t.due_date and (t.due_date - today).days <= 0:
+                deadlines.append(t)
+        else:
+            deadlines.append(t)
     
     # 2. Project Sub-tasks (top 3 for each)
     active_projects = project_repo.list_active()

@@ -104,9 +104,14 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
         file = await context.bot.get_file(doc.file_id)
         file_bytes = await file.download_as_bytearray()
         
-        from integrations.document_parser import extract_text_from_pdf, extract_text_from_docx
+        from integrations.document_parser import extract_text_from_pdf, extract_text_from_docx, extract_text_with_ai
         if doc.file_name.lower().endswith('.pdf'):
             text = extract_text_from_pdf(file_bytes)
+            if not text or len(text.strip()) < 100:
+                await update.message.reply_text("This looks like a scanned document. Using AI Vision to read it... ⏳")
+                ai_text = extract_text_with_ai(file_bytes)
+                if ai_text:
+                    text = ai_text
         else:
             text = extract_text_from_docx(file_bytes)
             
@@ -354,6 +359,7 @@ def build_estimate_conversation() -> ConversationHandler:
             ],
             AWAITING_CONFIRMATION: [
                 CommandHandler("confirm_estimate", confirm_estimate),
+                CommandHandler("adjust_hours", adjust_hours),
                 CommandHandler("skip_estimate", skip_estimate),
             ]
         },

@@ -392,6 +392,10 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("sync", cmd_sync))
     app.add_handler(CommandHandler("totalsync", cmd_total_sync))
     
+    app.add_handler(CommandHandler("confirm_estimate", cmd_confirm_estimate))
+    app.add_handler(CommandHandler("adjust_hours", cmd_adjust_hours))
+    app.add_handler(CommandHandler("skip_estimate", cmd_skip_estimate))
+    
     # Handle 'Done' buttons
     from telegram.ext import CallbackQueryHandler
     app.add_handler(CallbackQueryHandler(handle_callback_done, pattern="^done_"))

@@ -1,16 +1,22 @@
 # Reminder Bot - Project Plan
+## Current Status
+- [x] Multi-source sync (Google Calendar, Gmail, Canvas)
+- [x] AI Task Extraction (Haiku)
+- [x] Project Estimation and Checklist Generation (Sonnet)
+- [x] Database schema and repository pattern
+- [x] Basic Telegram bot commands (/today, /projects, /sync, /totalsync)
+- [x] Scheduled digests (Morning, Evening, Weekly, Monthly)
+- [x] Google Calendar write-back for deadlines and study sessions
+- [x] Fix missing Telegram command registrations for confirmation flow
+- [x] Add `/adjust_hours` to the checklist conversation state
+- [x] Add unit tests for `bot/conversations.py` (checklist flow)
+- [x] Implement OCR/Vision fallback for document parsing using Claude 3.5 Sonnet
+- [x] Allow marking exams/assessments as done via inline buttons (if overdue or due today)
 
-## Bugs Fixed
-- [x] **Timezone Inconsistency in Daily Digest**: Fixed an issue where the morning digest would use the server's local time (UTC) instead of the user's configured timezone.
-- [x] **Non-functional Inline Buttons**: Fixed an issue where 'Done' buttons in Telegram digests were unresponsive because the bot was not listening for `callback_query` updates.
-    - Updated `main.py` to allow `callback_query` updates.
-    - Refined `handle_callback_done` with `python-pro` for idempotency, safer parsing, and robust error handling.
-    - Added a comprehensive test suite with `qa-expert` covering 7 edge cases (idempotency, markdown escaping, API errors, etc.).
+## Pending Tasks
+- [ ] Implement robust error handling for document parsing
+- [ ] Verify Railway deployment setup
 
-## Process Improvements
-- [x] **Subagent Workflow**: Documented and implemented a mandatory workflow using `python-pro` for code and `qa-expert` for testing in `GEMINI.md`.
+## In Progress
+- [ ] Finalizing improvements and verifying deployment setup
 
-## Ongoing Tasks
-- [ ] Improve test coverage for other Telegram handlers.
-- [ ] Add integration tests for Google Calendar and Gmail mocks.
-- [ ] Implement robust error handling for AI API failures.
