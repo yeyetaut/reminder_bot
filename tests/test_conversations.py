@@ -46,7 +46,10 @@ def create_mock_context(engine, args=None, user_data=None, bot_data=None):
 @pytest.fixture
 def unconfirmed_project(engine, authenticated_user):
     repo = ProjectRepo(engine)
-    return repo.save(Project(user_id=1, title="Pending Project", source="test", confirmed=False))
+    task_repo = TaskRepo(engine)
+    project = repo.save(Project(user_id=1, title="Pending Project", source="test", confirmed=False))
+    task_repo.save(Task(user_id=1, project_id=project.id, title="Upload rubric", source="reminder", status=TaskStatus.pending))
+    return project
 
 @pytest.fixture
 def confirmed_project(engine, authenticated_user):
@@ -259,7 +262,7 @@ async def test_confirm_estimate_success(engine, pending_proposal):
     tasks = task_repo.list_active() if hasattr(task_repo, 'list_active') else [] # actually let's query tasks manually
     with Session(engine) as s:
         tasks = list(s.scalars(select(Task).where(Task.project_id == pending_proposal["project_id"])))
-        assert len(tasks) == 2
+        assert len(tasks) == 3
     
     assert len(context.bot_data[PENDING_PROPOSALS_KEY]) == 0
 

@@ -20,10 +20,14 @@ def test_project_repo_save_and_get(engine):
 
 def test_project_repo_list_unconfirmed(engine):
     repo = ProjectRepo(engine)
+    task_repo = TaskRepo(engine)
     p1 = Project(user_id=1, title="P1", source="test", source_id="s1", confirmed=False)
     p2 = Project(user_id=1, title="P2", source="test", source_id="s2", confirmed=True)
     repo.save(p1)
     repo.save(p2)
+    
+    # Add pending task to P1
+    task_repo.save(Task(user_id=1, project_id=p1.id, title="T1", source="test", status=TaskStatus.pending))
     
     unconfirmed = repo.list_unconfirmed(1)
     assert len(unconfirmed) == 1

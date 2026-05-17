@@ -53,8 +53,10 @@ class ProjectRepo:
         with Session(self.engine) as s:
             return list(s.scalars(
                 select(Project)
-                .where(Project.user_id == user_id, Project.confirmed == False)
+                .join(Project.tasks)
+                .where(Project.user_id == user_id, Project.confirmed == False, Task.status == TaskStatus.pending)
                 .options(joinedload(Project.tasks))
+                .distinct()
             ).unique())
 
     def list_active(self, user_id: int) -> List[Project]:
