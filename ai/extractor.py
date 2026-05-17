@@ -338,6 +338,12 @@ def extract_and_save(
             if due_raw:
                 try:
                     due = date.fromisoformat(due_raw[:10])
+                    # Skip items that are already overdue
+                    if due < config.get_today():
+                        logger.info(f"  [OVERDUE DROP] Skipping '{entry.get('title')}' — due date in the past")
+                        # Mark as processed so we don't keep extracting it
+                        processed_repo.save_many(user_id, [sid])
+                        continue
                 except ValueError:
                     pass
 

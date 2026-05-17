@@ -54,11 +54,11 @@ def _fetch_ical(url: str, source_name: str) -> List[Dict[str, Any]]:
             # Use the most specific date available as the deadline
             end = dtend or due or dtstart
 
-            # Optimization: skip events that ended more than RETENTION_DAYS ago
+            # Optimization: skip events that are already overdue
             if end:
                 try:
                     end_date = date.fromisoformat(end[:10])
-                    if (config.get_today() - end_date).days > config.RETENTION_DAYS:
+                    if end_date < config.get_today():
                         continue
                 except (ValueError, TypeError):
                     pass
