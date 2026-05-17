@@ -197,32 +197,29 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     if not user.google_credentials_encrypted:
         await update.message.reply_text(
-            "👋 *Welcome to Reminder Bot!*\n\n"
+            "👋 <b>Welcome to Reminder Bot!</b>\n\n"
             "To get started, you need to connect your Google account so I can sync your calendar and emails.\n\n"
             "👉 Please run /login to continue.",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         return
 
     await update.message.reply_text(
-        "👋 *Reminder Bot is running\\!*\n\n"
-        "Commands:\n"
-        "/today — today's task list\n"
-        "/projects — active projects\n"
-        "/sync — fetch today's new emails\n"
-        "/totalsync — full sync \\(last 14 days of emails \\+ 30 days calendar\\)\n"
-        "/checklist — generate a checklist for a project \\(upload rubrics\\)\n"
-        "/done <number\\|title> — mark a task complete\n"
-        "/snooze <number\\|title> — push task to tomorrow\n"
-        "/weekly — weekly overview\n"
-        "/monthly — monthly overview\n"
-        "/exams — upcoming exams\n"
-        "/status — check database status\n/login — connect your Google account\n\n"
-        "🔑 *Keys (Optional):*\n"
-        "/set\_anthropic\_key <key> — set your own Anthropic key\n"
-        "/set\_gemini\_key <key> — set your own Gemini key\n"
-        "/set\_canvas\_url <url> — set your Canvas iCal feed URL",
-        parse_mode="Markdown",
+        "👋 <b>Reminder Bot is running!</b>\n\n"
+        "<b>Core Commands:</b>\n"
+        "/today — Today's digest & deadlines\n"
+        "/projects — Active projects overview\n"
+        "/checklist — Generate an AI checklist for a project\n"
+        "/exams — Upcoming exams\n\n"
+        "<b>Overviews:</b>\n"
+        "/weekly — Weekly summary\n"
+        "/monthly — Monthly calendar\n\n"
+        "<b>Settings:</b>\n"
+        "/login — Connect your Google account\n"
+        "/set_canvas_url &lt;url&gt; — Link your Canvas iCal feed\n"
+        "/set_anthropic_key &lt;key&gt; — Set your Claude API key\n"
+        "/set_gemini_key &lt;key&gt; — Set your Gemini API key",
+        parse_mode="HTML",
     )
 
 
