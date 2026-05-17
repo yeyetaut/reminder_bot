@@ -130,7 +130,7 @@ def _migrate(engine):
     stmts = [
         "ALTER TABLE tasks ADD COLUMN gcal_synced INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE projects ADD COLUMN context_notes VARCHAR",
-        "ALTER TABLE tasks ADD COLUMN completed_at DATETIME",
+        "ALTER TABLE tasks ADD COLUMN completed_at TIMESTAMP",
         "ALTER TABLE tasks ADD COLUMN user_id INTEGER REFERENCES users(id)",
         "ALTER TABLE projects ADD COLUMN user_id INTEGER REFERENCES users(id)",
         "ALTER TABLE processed_sources ADD COLUMN user_id INTEGER REFERENCES users(id)",
