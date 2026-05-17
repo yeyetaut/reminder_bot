@@ -11,6 +11,8 @@ from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 import config
@@ -244,6 +246,15 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  <code>/set_canvas_url &lt;your_url&gt;</code>"
     )
     await update.message.reply_text(help_text, parse_mode="HTML")
+
+
+async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle unknown commands."""
+    await update.message.reply_text(
+        "🤔 <b>I don't recognize that command.</b>\n"
+        "Please type /start to see the list of available commands.",
+        parse_mode="HTML"
+    )
 
 
 @require_login
@@ -715,6 +726,9 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     # Register conversation handler AFTER explicit commands to ensure / commands have priority.
     from bot.conversations import build_estimate_conversation
     app.add_handler(build_estimate_conversation())
+
+    # Catch-all for unknown commands
+    app.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
 
     logger.info("Telegram bot handlers registered")
     return app
