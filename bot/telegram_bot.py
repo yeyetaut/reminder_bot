@@ -530,14 +530,21 @@ async def cmd_total_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task_repo, _, _ = _repos(context)
     user = _get_user(update, context)
     await _run_sync(update, context, days_back=14, label="Syncing all sources\\.\\.\\.", user=user)
-    # Backfill any existing Canvas tasks not yet written to Google Calendar
-    unsynced = task_repo.unsynced_canvas_tasks(user.id)
+    # Backfill any existing non-calendar tasks not yet written to Google Calendar
+    unsynced = task_repo.unsynced_tasks(user.id)
     if unsynced:
         from utils.security import decrypt_json
         google_creds = decrypt_json(user.google_credentials_encrypted) if user.google_credentials_encrypted else None
         for task in unsynced:
+            # Re-use the existing logic to check for duplicates before creating
+            title = f"[Deadline] {task.title}"
+            from integrations.google_calendar import find_event_by_title
+            if find_event_by_title(title, task.due_date.isoformat(), user_credentials=google_creds):
+                task_repo.mark_gcal_synced(user.id, task.id)
+                continue
+
             event_id = create_deadline_event(
-                title=f"[Deadline] {task.title}",
+                title=title,
                 date_str=task.due_date.isoformat(),
                 description=task.description or "",
                 user_credentials=google_creds,
@@ -545,7 +552,7 @@ async def cmd_total_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if event_id:
                 task_repo.mark_gcal_synced(user.id, task.id)
         await update.message.reply_text(
-            f"📅 Synced {len(unsynced)} existing Canvas task{'s' if len(unsynced) != 1 else ''} to Google Calendar\\.",
+            f"📅 Synced {len(unsynced)} existing deadline{'s' if len(unsynced) != 1 else ''} to Google Calendar\\.",
             parse_mode="Markdown",
         )
 

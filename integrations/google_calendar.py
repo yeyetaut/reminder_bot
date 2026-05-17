@@ -104,17 +104,24 @@ def create_deadline_event(title: str, date_str: str, description: str = "", user
     """
     try:
         service = build("calendar", "v3", credentials=get_credentials(user_credentials))
+        
+        # In Google Calendar API, for all-day events, the 'end' date is exclusive.
+        # This means for a deadline on May 20, start=May 20, end=May 21.
+        from datetime import date, timedelta
+        start_date = date.fromisoformat(date_str)
+        end_date = start_date + timedelta(days=1)
+        
         event = {
             "summary": title,
             "description": description,
-            "start": {"date": date_str},
-            "end": {"date": date_str},
+            "start": {"date": start_date.isoformat()},
+            "end": {"date": end_date.isoformat()},
         }
         created = service.events().insert(calendarId="primary", body=event).execute()
-        logger.info(f"Created deadline event: {title} on {date_str}")
+        logger.info(f"Created deadline event: {title} (start={start_date.isoformat()}, end={end_date.isoformat()})")
         return created.get("id")
     except Exception as e:
-        logger.error(f"Failed to create deadline event: {e}")
+        logger.error(f"Failed to create deadline event '{title}' on {date_str}: {e}")
         return None
 
 

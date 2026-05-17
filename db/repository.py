@@ -211,6 +211,19 @@ class TaskRepo:
             s.commit()
             return result.rowcount
 
+    def unsynced_tasks(self, user_id: int) -> List[Task]:
+        """Return non-calendar tasks (Gmail, Canvas, etc.) not yet written to Google Calendar."""
+        with Session(self.engine) as s:
+            return list(s.scalars(
+                select(Task)
+                .where(
+                    Task.user_id == user_id,
+                    Task.source != "google_calendar",
+                    Task.gcal_synced == False,
+                    Task.due_date != None
+                )
+            ))
+
     def mark_gcal_synced(self, user_id: int, task_id: int) -> None:
         with Session(self.engine) as s:
             s.execute(update(Task).where(Task.user_id == user_id, Task.id == task_id).values(gcal_synced=True))
