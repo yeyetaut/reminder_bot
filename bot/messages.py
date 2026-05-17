@@ -34,13 +34,13 @@ def is_exam(title: str) -> bool:
     return any(kw in t for kw in keywords)
 
 
-def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
+def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int) -> str:
     today = config.get_today()
 
     # Upcoming deadlines in the next 4 days (includes today)
-    upcoming = task_repo.upcoming(days=4)
+    upcoming = task_repo.upcoming(user_id, days=4)
     # Active projects
-    active_projects = project_repo.list_active()
+    active_projects = project_repo.list_active(user_id)
 
     # Filter upcoming to exclude AI-generated tasks (they are shown in the Projects section)
     deadlines = [t for t in upcoming if t.source not in ("ai_plan", "ai_breakdown")]
@@ -112,14 +112,14 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     return "\n".join(lines)
 
 
-def evening_recap(task_repo: TaskRepo) -> str:
+def evening_recap(task_repo: TaskRepo, user_id: int) -> str:
     """Returns None if there's nothing worth reporting (skip the message)."""
     today = config.get_today()
     tomorrow = today + timedelta(days=1)
 
-    today_tasks = task_repo.for_date(today)
+    today_tasks = task_repo.for_date(user_id, today)
     done = [t for t in today_tasks if t.status == TaskStatus.done]
-    tomorrow_tasks = task_repo.upcoming(days=2)  # tasks due today or tomorrow
+    tomorrow_tasks = task_repo.upcoming(user_id, days=2)  # tasks due today or tomorrow
 
     # Only send if something was completed or there's something due tomorrow
     if not done and not tomorrow_tasks:
@@ -142,10 +142,10 @@ def evening_recap(task_repo: TaskRepo) -> str:
     return "\n".join(lines)
 
 
-def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
+def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int) -> str:
     today = config.get_today()
-    upcoming = task_repo.upcoming(days=7)
-    active_projects = project_repo.list_active()
+    upcoming = task_repo.upcoming(user_id, days=7)
+    active_projects = project_repo.list_active(user_id)
 
     # Filter out AI breakdowns from the regular deadlines list
     deadlines = [t for t in upcoming if t.source not in ("ai_plan", "ai_breakdown")]
@@ -180,10 +180,10 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     return "\n".join(lines)
 
 
-def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
+def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int) -> str:
     today = config.get_today()
-    upcoming = task_repo.upcoming(days=30)
-    active_projects = project_repo.list_active()
+    upcoming = task_repo.upcoming(user_id, days=30)
+    active_projects = project_repo.list_active(user_id)
 
     # Filter out AI breakdowns from the regular deadlines list
     deadlines = [t for t in upcoming if t.source not in ("ai_plan", "ai_breakdown")]
@@ -220,8 +220,8 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo) -> str:
     return "\n".join(lines)
 
 
-def project_list(project_repo: ProjectRepo) -> str:
-    active = project_repo.list_active()
+def project_list(project_repo: ProjectRepo, user_id: int) -> str:
+    active = project_repo.list_active(user_id)
     if not active:
         return "_No active projects right now._"
 
@@ -235,10 +235,10 @@ def project_list(project_repo: ProjectRepo) -> str:
     return "\n".join(lines)
 
 
-def exams_overview(task_repo: TaskRepo) -> str:
+def exams_overview(task_repo: TaskRepo, user_id: int) -> str:
     """Returns a 180-day outlook for exams."""
     # Look further ahead for exams (6 months)
-    upcoming = task_repo.upcoming(days=180)
+    upcoming = task_repo.upcoming(user_id, days=180)
     
     exams = [t for t in upcoming if is_exam(t.title)]
     
@@ -256,14 +256,28 @@ def exams_overview(task_repo: TaskRepo) -> str:
     return "\n".join(lines)
 
 
-def get_morning_digest_buttons(task_repo: TaskRepo, project_repo: ProjectRepo):
+def get_snooze_options_buttons(task_id: int):
+    """Generate buttons for different snooze durations."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    buttons = [
+        [
+            InlineKeyboardButton("Tomorrow", callback_data=f"snooze_apply_{task_id}_1"),
+            InlineKeyboardButton("3 Days", callback_data=f"snooze_apply_{task_id}_3"),
+            InlineKeyboardButton("1 Week", callback_data=f"snooze_apply_{task_id}_7"),
+        ],
+        [InlineKeyboardButton("⬅️ Back", callback_data="back_to_digest")]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_morning_digest_buttons(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int):
     """Generate an InlineKeyboardMarkup with 'Done' buttons for visible tasks."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     
     today = config.get_today()
 
     # 1. Deadlines (next 4 days)
-    upcoming = task_repo.upcoming(days=4)
+    upcoming = task_repo.upcoming(user_id, days=4)
     
     deadlines = []
     for t in upcoming:
@@ -277,7 +291,7 @@ def get_morning_digest_buttons(task_repo: TaskRepo, project_repo: ProjectRepo):
             deadlines.append(t)
     
     # 2. Project Sub-tasks (top 3 for each)
-    active_projects = project_repo.list_active()
+    active_projects = project_repo.list_active(user_id)
     
     buttons = []
     
@@ -286,11 +300,17 @@ def get_morning_digest_buttons(task_repo: TaskRepo, project_repo: ProjectRepo):
         pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
         for st in pending[:3]:
             label = st.title.split(" — ")[-1] if " — " in st.title else st.title
-            buttons.append([InlineKeyboardButton(f"✅ {label}", callback_data=f"done_{st.id}")])
+            buttons.append([
+                InlineKeyboardButton(f"✅ {label}", callback_data=f"done_{st.id}"),
+                InlineKeyboardButton(f"💤", callback_data=f"snooze_opt_{st.id}")
+            ])
 
     # Add regular deadlines
     for t in deadlines:
-        buttons.append([InlineKeyboardButton(f"✅ {t.title}", callback_data=f"done_{t.id}")])
+        buttons.append([
+            InlineKeyboardButton(f"✅ {t.title}", callback_data=f"done_{t.id}"),
+            InlineKeyboardButton(f"💤", callback_data=f"snooze_opt_{t.id}")
+        ])
 
     if not buttons:
         return None

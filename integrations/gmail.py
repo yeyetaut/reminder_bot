@@ -1,6 +1,6 @@
 import logging
 import base64
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 from googleapiclient.discovery import build
 
@@ -44,14 +44,14 @@ def _decode_body(payload: Dict) -> str:
     return body
 
 
-def fetch_emails(max_results: int = 30, days_back: int = 14) -> Tuple[List[Dict[str, Any]], str | None]:
+def fetch_emails(max_results: int = 30, days_back: int = 14, user_credentials: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict[str, Any]], str | None]:
     """
     Return (emails, error_message).
     days_back controls how far back to search (default 14 for full sync, use 1 for daily sync).
     error_message is None on success, a string describing the failure otherwise.
     """
     try:
-        service = build("gmail", "v1", credentials=get_credentials())
+        service = build("gmail", "v1", credentials=get_credentials(user_credentials))
 
         results = service.users().messages().list(
             userId="me",

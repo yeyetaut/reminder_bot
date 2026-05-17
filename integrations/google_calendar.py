@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from googleapiclient.discovery import build
 
@@ -10,10 +10,10 @@ from integrations.google_auth import get_credentials
 logger = logging.getLogger(__name__)
 
 
-def fetch_events(days_ahead: int = 30) -> List[Dict[str, Any]]:
+def fetch_events(days_ahead: int = 30, user_credentials: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Return calendar events for the next `days_ahead` days."""
     try:
-        service = build("calendar", "v3", credentials=get_credentials())
+        service = build("calendar", "v3", credentials=get_credentials(user_credentials))
         now = datetime.now(timezone.utc)
         time_max = now + timedelta(days=days_ahead)
 
@@ -53,14 +53,14 @@ def fetch_events(days_ahead: int = 30) -> List[Dict[str, Any]]:
         return []
 
 
-def delete_study_events(project_title: str | None = None) -> int:
+def delete_study_events(project_title: str | None = None, user_credentials: Optional[Dict[str, Any]] = None) -> int:
     """Delete Google Calendar events whose title starts with '[Study] <project_title>'.
 
     If project_title is None, deletes ALL events starting with '[Study] '.
     Returns the number of events deleted.
     """
     try:
-        service = build("calendar", "v3", credentials=get_credentials())
+        service = build("calendar", "v3", credentials=get_credentials(user_credentials))
         deleted = 0
         page_token = None
 
@@ -98,12 +98,12 @@ def delete_study_events(project_title: str | None = None) -> int:
         return 0
 
 
-def create_deadline_event(title: str, date_str: str, description: str = "") -> str | None:
+def create_deadline_event(title: str, date_str: str, description: str = "", user_credentials: Optional[Dict[str, Any]] = None) -> str | None:
     """Create an all-day calendar event for a task deadline. date_str: 'YYYY-MM-DD'.
     Returns the Google Calendar event ID (not the URL) so it can be stored for dedup.
     """
     try:
-        service = build("calendar", "v3", credentials=get_credentials())
+        service = build("calendar", "v3", credentials=get_credentials(user_credentials))
         event = {
             "summary": title,
             "description": description,
@@ -118,10 +118,10 @@ def create_deadline_event(title: str, date_str: str, description: str = "") -> s
         return None
 
 
-def create_event(title: str, date_str: str, duration_hours: float = 1.0, description: str = "") -> str | None:
+def create_event(title: str, date_str: str, duration_hours: float = 1.0, description: str = "", user_credentials: Optional[Dict[str, Any]] = None) -> str | None:
     """Create a calendar event. date_str format: 'YYYY-MM-DD'. Returns event URL or None."""
     try:
-        service = build("calendar", "v3", credentials=get_credentials())
+        service = build("calendar", "v3", credentials=get_credentials(user_credentials))
         start_dt = datetime.fromisoformat(f"{date_str}T09:00:00")
         end_dt = start_dt + timedelta(hours=duration_hours)
 
@@ -140,10 +140,10 @@ def create_event(title: str, date_str: str, duration_hours: float = 1.0, descrip
         return None
 
 
-def find_event_by_title(title: str, date_str: str) -> bool:
+def find_event_by_title(title: str, date_str: str, user_credentials: Optional[Dict[str, Any]] = None) -> bool:
     """Check if an event with this exact title exists on this date."""
     try:
-        service = build("calendar", "v3", credentials=get_credentials())
+        service = build("calendar", "v3", credentials=get_credentials(user_credentials))
         start_dt = datetime.fromisoformat(f"{date_str}T00:00:00").replace(tzinfo=timezone.utc)
         end_dt = start_dt + timedelta(days=1)
 

@@ -10,15 +10,15 @@ def test_morning_digest_with_projects(engine):
     today = date.today()
     
     # Create an active project
-    project = project_repo.save(Project(title="Big Research Paper", source="canvas", due_date=today + timedelta(days=10), confirmed=True))
+    project = project_repo.save(Project(user_id=1, title="Big Research Paper", source="canvas", due_date=today + timedelta(days=10), confirmed=True))
     
     # Add some sub-tasks (source="ai_breakdown")
-    task_repo.save(Task(project_id=project.id, title="Big Research Paper — Step 1", source="ai_breakdown", status=TaskStatus.pending))
-    task_repo.save(Task(project_id=project.id, title="Big Research Paper — Step 2", source="ai_breakdown", status=TaskStatus.pending))
-    task_repo.save(Task(project_id=project.id, title="Big Research Paper — Step 3", source="ai_breakdown", status=TaskStatus.pending))
-    task_repo.save(Task(project_id=project.id, title="Big Research Paper — Step 4", source="ai_breakdown", status=TaskStatus.pending))
+    task_repo.save(Task(user_id=1, project_id=project.id, title="Big Research Paper — Step 1", source="ai_breakdown", status=TaskStatus.pending))
+    task_repo.save(Task(user_id=1, project_id=project.id, title="Big Research Paper — Step 2", source="ai_breakdown", status=TaskStatus.pending))
+    task_repo.save(Task(user_id=1, project_id=project.id, title="Big Research Paper — Step 3", source="ai_breakdown", status=TaskStatus.pending))
+    task_repo.save(Task(user_id=1, project_id=project.id, title="Big Research Paper — Step 4", source="ai_breakdown", status=TaskStatus.pending))
     
-    digest = morning_digest(task_repo, project_repo)
+    digest = morning_digest(task_repo, project_repo, 1)
     
     assert "🟡 *Projects*" in digest
     assert "Big Research Paper" in digest

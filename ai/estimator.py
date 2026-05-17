@@ -42,9 +42,9 @@ Rules:
 """
 
 
-def _call_claude(prompt: str) -> str:
+def _call_claude(prompt: str, api_key: str | None = None) -> str:
     import anthropic
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=api_key or config.ANTHROPIC_API_KEY)
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1024,
@@ -53,22 +53,22 @@ def _call_claude(prompt: str) -> str:
     return response.content[0].text.strip()
 
 
-def _call_gemini(prompt: str, model: str) -> str:
+def _call_gemini(prompt: str, model: str, api_key: str | None = None) -> str:
     from google import genai
-    client = genai.Client(api_key=config.GEMINI_API_KEY)
+    client = genai.Client(api_key=api_key or config.GEMINI_API_KEY)
     response = client.models.generate_content(model=model, contents=prompt)
     return response.text.strip()
 
 
-def _call_ai(prompt: str) -> tuple[str, str]:
+def _call_ai(prompt: str, anthropic_api_key: str | None = None, gemini_api_key: str | None = None) -> tuple[str, str]:
     """Try Claude Haiku, then Gemini 2.0 Flash, then Gemini 1.5 Flash."""
     import time
     errors = []
 
-    if config.ANTHROPIC_API_KEY:
+    if anthropic_api_key or config.ANTHROPIC_API_KEY:
         for attempt in range(3):
             try:
-                raw = _call_claude(prompt)
+                raw = _call_claude(prompt, anthropic_api_key)
                 logger.info(f"Estimator: Claude Haiku call successful (attempt {attempt+1})")
                 return raw, "claude-haiku"
             except Exception as e:
@@ -81,10 +81,10 @@ def _call_ai(prompt: str) -> tuple[str, str]:
                 if attempt < 2:
                     time.sleep(2 ** attempt)
 
-    if config.GEMINI_API_KEY:
+    if gemini_api_key or config.GEMINI_API_KEY:
         for attempt in range(2):
             try:
-                raw = _call_gemini(prompt, "gemini-1.5-pro")
+                raw = _call_gemini(prompt, "gemini-1.5-pro", gemini_api_key)
                 logger.info(f"Estimator: Gemini 1.5 Pro call successful (attempt {attempt+1})")
                 return raw, "gemini-1.5-pro"
             except Exception as e:
@@ -130,7 +130,7 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
     raise ValueError("Could not find a valid JSON object in AI response")
 
 
-def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
+def estimate_project(project: Project, anthropic_api_key: str | None = None, gemini_api_key: str | None = None) -> Optional[Dict[str, Any]]:
     """
     Call AI to break down a project into a checklist. Returns the parsed proposal dict or None on failure.
     Does NOT save to DB — caller handles confirmation flow.
@@ -150,7 +150,7 @@ def estimate_project(project: Project) -> Optional[Dict[str, Any]]:
     )
 
     try:
-        raw, model_used = _call_ai(prompt)
+        raw, model_used = _call_ai(prompt, anthropic_api_key, gemini_api_key)
         logger.info(f"Estimator: '{project.title}' — {model_used} call successful")
     except Exception as e:
         logger.error(f"Estimator: all AI providers failed for '{project.title}': {e}")
@@ -182,7 +182,6 @@ def format_proposal_message(proposal: Dict[str, Any]) -> str:
     lines += [
         "",
         "---",
-        "✅ /confirm\\_estimate · accept checklist",
-        "⏭️ /skip\\_estimate · ignore for now",
+        "_Confirm or skip below_"
     ]
     return "\n".join(lines)

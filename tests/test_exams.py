@@ -17,11 +17,11 @@ def test_exams_overview(engine):
     today = date.today()
     
     # Not an exam
-    task_repo.save(Task(title="Homework 1", due_date=today + timedelta(days=5), source="canvas"))
+    task_repo.save(Task(user_id=1, title="Homework 1", due_date=today + timedelta(days=5), source="canvas"))
     # Is an exam
-    task_repo.save(Task(title="CS101 Final Exam", due_date=today + timedelta(days=10), source="canvas"))
+    task_repo.save(Task(user_id=1, title="CS101 Final Exam", due_date=today + timedelta(days=10), source="canvas"))
     
-    digest = exams_overview(task_repo)
+    digest = exams_overview(task_repo, 1)
     assert "CS101 Final Exam" in digest
     assert "Homework 1" not in digest
     assert "🔴 *Upcoming Exams*" in digest
@@ -32,15 +32,15 @@ def test_morning_digest_split_exams(engine):
     today = date.today()
     
     # AI Breakdown task (linked to a project)
-    project = project_repo.save(Project(title="CS101", source="test", confirmed=True))
-    task_repo.save(Task(project_id=project.id, title="CS101 — Study", source="ai_breakdown", status=TaskStatus.pending))
+    project = project_repo.save(Project(user_id=1, title="CS101", source="test", confirmed=True))
+    task_repo.save(Task(user_id=1, project_id=project.id, title="CS101 — Study", source="ai_breakdown", status=TaskStatus.pending))
     
     # Task
-    task_repo.save(Task(title="Homework 1", due_date=today + timedelta(days=2), source="canvas"))
+    task_repo.save(Task(user_id=1, title="Homework 1", due_date=today + timedelta(days=2), source="canvas"))
     # Exam
-    task_repo.save(Task(title="Midterm", due_date=today + timedelta(days=3), source="canvas"))
+    task_repo.save(Task(user_id=1, title="Midterm", due_date=today + timedelta(days=3), source="canvas"))
     
-    digest = morning_digest(task_repo, project_repo)
+    digest = morning_digest(task_repo, project_repo, 1)
     
     assert "🟡 *Projects*" in digest
     assert "Study" in digest

@@ -16,6 +16,9 @@ def _require(key: str) -> str:
 TELEGRAM_BOT_TOKEN: str = _require("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID: str = _require("TELEGRAM_CHAT_ID")
 
+# Security
+ENCRYPTION_KEY: str = _require("ENCRYPTION_KEY")
+
 # Anthropic (primary AI)
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
@@ -29,8 +32,15 @@ GOOGLE_TOKEN_FILE: str = os.getenv("GOOGLE_TOKEN_FILE", "token.json")
 # LMS iCal feeds
 CANVAS_ICAL_URL: str = os.getenv("CANVAS_ICAL_URL", "")
 
+# Retention
+RETENTION_DAYS: int = int(os.getenv("RETENTION_DAYS", "7"))
+
 # Scheduler
 TIMEZONE: str = os.getenv("TIMEZONE", "America/New_York")
+
+# Web Server
+WEB_URL: str = os.getenv("WEB_URL", "http://localhost:8080")
+PORT: int = int(os.getenv("PORT", "8080"))
 
 
 def get_today() -> date:

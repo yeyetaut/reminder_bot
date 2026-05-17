@@ -1,20 +1,48 @@
+import os
+import glob
 import re
 
-with open("tests/test_conversations.py", "r") as f:
-    content = f.read()
+TEST_DIR = "tests"
+files = glob.glob(f"{TEST_DIR}/*.py")
 
-# Fix get_by_id
-content = content.replace("repo.get_by_id(unconfirmed_project.id)", "context.bot_data['engine'].connect() # wait, we should just use Session")
-content = content.replace(
-    "proj = repo.get_by_id(unconfirmed_project.id)",
-    "from sqlalchemy.orm import Session\n    with Session(engine) as s:\n        proj = s.get(Project, unconfirmed_project.id)"
-)
-content = content.replace(
-    "project = project_repo.get_by_id(pending_proposal[\"project_id\"])",
-    "from sqlalchemy.orm import Session\n    with Session(engine) as s:\n        project = s.get(Project, pending_proposal[\"project_id\"])"
-)
+for fpath in files:
+    with open(fpath, "r") as f:
+        content = f.read()
 
-# Fix adjust_hours patch
-content = content.replace("@patch('bot.conversations.estimate_project')", "@patch('bot.conversations.estimate_project')\n@patch('ai.estimator.estimate_project')")
+    # Model initializations
+    content = re.sub(r'Task\(', r'Task(user_id=1, ', content)
+    content = re.sub(r'Project\(', r'Project(user_id=1, ', content)
+    content = re.sub(r'ProcessedSource\(', r'ProcessedSource(user_id=1, ', content)
 
-# Wait, if I add two patches, I need to update the function signature. Let's do it manually with regex.
+    # Repository calls
+    content = re.sub(r'repo\.get_by_id\(([^,)]+)\)', r'repo.get_by_id(1, \1)', content)
+    content = re.sub(r'task_repo\.get_by_id\(([^,)]+)\)', r'task_repo.get_by_id(1, \1)', content)
+    content = re.sub(r'proj_repo\.get_by_id\(([^,)]+)\)', r'proj_repo.get_by_id(1, \1)', content)
+    
+    content = re.sub(r'repo\.get_by_source_id\(([^,)]+)\)', r'repo.get_by_source_id(1, \1)', content)
+    content = re.sub(r'task_repo\.exists_by_source_id\(([^,)]+)\)', r'task_repo.exists_by_source_id(1, \1)', content)
+    content = re.sub(r'repo\.exists_by_source_id\(([^,)]+)\)', r'repo.exists_by_source_id(1, \1)', content)
+
+    content = re.sub(r'repo\.for_date\(([^,)]+)\)', r'repo.for_date(1, \1)', content)
+    content = re.sub(r'task_repo\.for_date\(([^,)]+)\)', r'task_repo.for_date(1, \1)', content)
+    
+    content = re.sub(r'repo\.get_or_create\(([^,)]+)\)', r'repo.get_or_create(1, \1)', content)
+    
+    content = re.sub(r'repo\.is_already_planned\(([^,)]+)\)', r'repo.is_already_planned(1, \1)', content)
+    content = re.sub(r'project_repo\.is_already_planned\(([^,)]+)\)', r'project_repo.is_already_planned(1, \1)', content)
+    
+    content = re.sub(r'repo\.cleanup_old_tasks\(\)', r'repo.cleanup_old_tasks(1)', content)
+    
+    content = re.sub(r'repo\.save_many\(([^,)]+)\)', r'repo.save_many(1, \1)', content)
+    
+    content = re.sub(r'repo\.list_unconfirmed\(\)', r'repo.list_unconfirmed(1)', content)
+
+    # Function calls
+    content = re.sub(r'exams_overview\(task_repo\)', r'exams_overview(1, task_repo)', content)
+    content = re.sub(r'morning_digest\(task_repo, project_repo\)', r'morning_digest(1, task_repo, project_repo)', content)
+    content = re.sub(r'_filter_new\(([^,]+), task_repo, project_repo\)', r'_filter_new(1, \1, task_repo, project_repo)', content)
+    content = re.sub(r'_is_duplicate_project\(([^,]+), project_repo\)', r'_is_duplicate_project(1, \1, project_repo)', content)
+    content = re.sub(r'get_morning_digest_buttons\(task_repo, project_repo\)', r'get_morning_digest_buttons(1, task_repo, project_repo)', content)
+
+    with open(fpath, "w") as f:
+        f.write(content)

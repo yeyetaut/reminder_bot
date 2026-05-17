@@ -4,16 +4,42 @@ from sqlalchemy import Engine, select, update, delete
 from sqlalchemy.orm import Session
 
 import config
-from db.models import Project, Task, TaskStatus, DailyPlan
+from db.models import Project, Task, TaskStatus, DailyPlan, ProcessedSource, User
+
+
+class UserRepo:
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
+    def get_by_telegram_id(self, telegram_id: int) -> Optional[User]:
+        with Session(self.engine) as s:
+            return s.scalar(select(User).where(User.telegram_id == telegram_id))
+
+    def create_user(self, telegram_id: int, chat_id: int, timezone: str = "America/New_York", **kwargs) -> User:
+        with Session(self.engine) as s:
+            user = User(telegram_id=telegram_id, telegram_chat_id=chat_id, timezone=timezone, **kwargs)
+            s.add(user)
+            s.commit()
+            s.refresh(user)
+            return user
+
+    def update_user(self, user_id: int, **kwargs) -> None:
+        with Session(self.engine) as s:
+            s.execute(update(User).where(User.id == user_id).values(**kwargs))
+            s.commit()
+
+    def get_all_users(self) -> List[User]:
+        with Session(self.engine) as s:
+            return list(s.scalars(select(User)))
 
 
 class ProjectRepo:
     def __init__(self, engine: Engine):
         self.engine = engine
 
-    def get_by_source_id(self, source_id: str) -> Optional[Project]:
+    def get_by_source_id(self, user_id: int, source_id: str) -> Optional[Project]:
         with Session(self.engine) as s:
-            return s.scalar(select(Project).where(Project.source_id == source_id))
+            return s.scalar(select(Project).where(Project.user_id == user_id, Project.source_id == source_id))
 
     def save(self, project: Project) -> Project:
         with Session(self.engine) as s:
@@ -22,41 +48,41 @@ class ProjectRepo:
             s.refresh(project)
             return project
 
-    def list_unconfirmed(self) -> List[Project]:
+    def list_unconfirmed(self, user_id: int) -> List[Project]:
         from sqlalchemy.orm import joinedload
         with Session(self.engine) as s:
             return list(s.scalars(
                 select(Project)
-                .where(Project.confirmed == False)
+                .where(Project.user_id == user_id, Project.confirmed == False)
                 .options(joinedload(Project.tasks))
             ).unique())
 
-    def list_active(self) -> List[Project]:
+    def list_active(self, user_id: int) -> List[Project]:
         """Projects with pending tasks (tasks eagerly loaded)."""
         from sqlalchemy.orm import joinedload
         with Session(self.engine) as s:
             return list(s.scalars(
                 select(Project)
                 .join(Project.tasks)
-                .where(Task.status == TaskStatus.pending)
+                .where(Project.user_id == user_id, Task.status == TaskStatus.pending)
                 .options(joinedload(Project.tasks))
                 .distinct()
             ).unique())
 
-    def list_all(self) -> List[Project]:
+    def list_all(self, user_id: int) -> List[Project]:
         with Session(self.engine) as s:
-            return list(s.scalars(select(Project)))
+            return list(s.scalars(select(Project).where(Project.user_id == user_id)))
 
-    def confirm(self, project_id: int, estimated_hours: float) -> None:
+    def confirm(self, user_id: int, project_id: int, estimated_hours: float) -> None:
         with Session(self.engine) as s:
             s.execute(
                 update(Project)
-                .where(Project.id == project_id)
+                .where(Project.user_id == user_id, Project.id == project_id)
                 .values(confirmed=True, estimated_hours=estimated_hours)
             )
             s.commit()
 
-    def is_already_planned(self, title: str, threshold: float = 0.55) -> bool:
+    def is_already_planned(self, user_id: int, title: str, threshold: float = 0.55) -> bool:
         """Return True if a confirmed project with a similar title already exists.
         Lower threshold (0.55) than _is_duplicate_project (0.72) — this is the
         final safety net before sending a proposal.
@@ -68,17 +94,17 @@ class ProjectRepo:
             return _study.sub("", t).lower().strip()
         norm_title = norm(title)
         with Session(self.engine) as s:
-            for p in s.scalars(select(Project).where(Project.confirmed == True)):
+            for p in s.scalars(select(Project).where(Project.user_id == user_id, Project.confirmed == True)):
                 if SequenceMatcher(None, norm_title, norm(p.title)).ratio() >= threshold:
                     return True
         return False
 
-    def reset_confirmation(self, project_id: int) -> None:
+    def reset_confirmation(self, user_id: int, project_id: int) -> None:
         """Reset a project to unconfirmed so it can be re-estimated."""
         with Session(self.engine) as s:
             s.execute(
                 update(Project)
-                .where(Project.id == project_id)
+                .where(Project.user_id == user_id, Project.id == project_id)
                 .values(confirmed=False, estimated_hours=None)
             )
             s.commit()
@@ -99,13 +125,13 @@ class TaskRepo:
             )
             s.commit()
 
-    def get_by_id(self, task_id: int) -> Optional[Task]:
+    def get_by_id(self, user_id: int, task_id: int) -> Optional[Task]:
         with Session(self.engine) as s:
-            return s.get(Task, task_id)
+            return s.scalar(select(Task).where(Task.user_id == user_id, Task.id == task_id))
 
-    def exists_by_source_id(self, source_id: str) -> bool:
+    def exists_by_source_id(self, user_id: int, source_id: str) -> bool:
         with Session(self.engine) as s:
-            return s.scalar(select(Task).where(Task.source_id == source_id)) is not None
+            return s.scalar(select(Task).where(Task.user_id == user_id, Task.source_id == source_id)) is not None
 
     def save(self, task: Task) -> Task:
         with Session(self.engine) as s:
@@ -119,96 +145,150 @@ class TaskRepo:
             s.add_all(tasks)
             s.commit()
 
-    def for_date(self, d: date) -> List[Task]:
+    def for_date(self, user_id: int, d: date) -> List[Task]:
         with Session(self.engine) as s:
             return list(s.scalars(
                 select(Task)
-                .where(Task.scheduled_date == d, Task.status == TaskStatus.pending)
+                .where(Task.user_id == user_id, Task.scheduled_date == d, Task.status == TaskStatus.pending)
                 .order_by(Task.due_date)
             ))
 
-    def mark_done(self, task_id: int) -> None:
-        self._set_status(task_id, TaskStatus.done)
+    def mark_done(self, user_id: int, task_id: int) -> None:
+        self._set_status(user_id, task_id, TaskStatus.done)
 
-    def mark_skipped(self, task_id: int) -> None:
-        self._set_status(task_id, TaskStatus.skipped)
+    def mark_skipped(self, user_id: int, task_id: int) -> None:
+        self._set_status(user_id, task_id, TaskStatus.skipped)
 
-    def reschedule(self, task_id: int, new_date: date) -> None:
+    def reschedule(self, user_id: int, task_id: int, new_date: date) -> None:
         with Session(self.engine) as s:
-            s.execute(update(Task).where(Task.id == task_id).values(scheduled_date=new_date))
+            s.execute(update(Task).where(Task.user_id == user_id, Task.id == task_id).values(scheduled_date=new_date))
             s.commit()
 
-    def _set_status(self, task_id: int, status: TaskStatus) -> None:
+    def _set_status(self, user_id: int, task_id: int, status: TaskStatus) -> None:
         with Session(self.engine) as s:
-            s.execute(update(Task).where(Task.id == task_id).values(status=status))
+            values = {"status": status}
+            if status in (TaskStatus.done, TaskStatus.skipped):
+                values["completed_at"] = datetime.utcnow()
+            s.execute(update(Task).where(Task.user_id == user_id, Task.id == task_id).values(**values))
             s.commit()
 
-    def mark_gcal_synced(self, task_id: int) -> None:
+    def cleanup_old_tasks(self, user_id: int, days: int) -> int:
+        """
+        Delete tasks that were completed/skipped more than `days` ago.
+        Preserves their source_ids in ProcessedSource to prevent re-extraction.
+        Returns count deleted.
+        """
+        from datetime import timedelta
+        threshold = datetime.utcnow() - timedelta(days=days)
+        
         with Session(self.engine) as s:
-            s.execute(update(Task).where(Task.id == task_id).values(gcal_synced=True))
-            s.commit()
-
-    def unsynced_canvas_tasks(self) -> List[Task]:
-        """Return Canvas tasks not yet written to Google Calendar."""
-        with Session(self.engine) as s:
-            return list(s.scalars(
-                select(Task)
-                .where(Task.source == "canvas", Task.gcal_synced == False, Task.due_date != None)
-            ))
-
-    def has_ai_tasks_for_title(self, project_title: str) -> bool:
-        """Return True if AI-generated tasks (plan or breakdown) already exist for this project title."""
-        with Session(self.engine) as s:
-            return s.scalar(
-                select(Task.id)
-                .where(Task.source.in_(["ai_plan", "ai_breakdown"]), Task.title.like(project_title + " —%"))
-                .limit(1)
-            ) is not None
-
-    def delete_ai_tasks(self, project_id: int) -> int:
-        """Delete all AI-generated tasks (plan or breakdown) for a project. Returns count deleted."""
-        with Session(self.engine) as s:
+            # 1. Identify tasks to clean up
+            stmt = select(Task.source_id).where(
+                Task.user_id == user_id,
+                Task.status.in_([TaskStatus.done, TaskStatus.skipped]),
+                Task.completed_at <= threshold,
+                Task.source_id != None
+            )
+            source_ids = list(s.scalars(stmt))
+            
+            if source_ids:
+                # 2. Save IDs to ProcessedSource (ignore duplicates if any)
+                for sid in source_ids:
+                    exists = s.scalar(select(ProcessedSource).where(ProcessedSource.user_id == user_id, ProcessedSource.source_id == sid))
+                    if not exists:
+                        s.add(ProcessedSource(user_id=user_id, source_id=sid))
+            
+            # 3. Delete the tasks
             result = s.execute(
-                delete(Task)
-                .where(Task.project_id == project_id, Task.source.in_(["ai_plan", "ai_breakdown"]))
+                delete(Task).where(
+                    Task.user_id == user_id,
+                    Task.status.in_([TaskStatus.done, TaskStatus.skipped]),
+                    Task.completed_at <= threshold
+                )
             )
             s.commit()
             return result.rowcount
 
-    def delete_all_ai_tasks(self) -> int:
-        """Delete all AI-generated tasks across all projects. Returns count deleted."""
+    def mark_gcal_synced(self, user_id: int, task_id: int) -> None:
         with Session(self.engine) as s:
-            result = s.execute(delete(Task).where(Task.source.in_(["ai_plan", "ai_breakdown"])))
+            s.execute(update(Task).where(Task.user_id == user_id, Task.id == task_id).values(gcal_synced=True))
+            s.commit()
+
+    def unsynced_canvas_tasks(self, user_id: int) -> List[Task]:
+        """Return Canvas tasks not yet written to Google Calendar."""
+        with Session(self.engine) as s:
+            return list(s.scalars(
+                select(Task)
+                .where(Task.user_id == user_id, Task.source == "canvas", Task.gcal_synced == False, Task.due_date != None)
+            ))
+
+    def has_ai_tasks_for_title(self, user_id: int, project_title: str) -> bool:
+        """Return True if AI-generated tasks (plan or breakdown) already exist for this project title."""
+        with Session(self.engine) as s:
+            return s.scalar(
+                select(Task.id)
+                .where(Task.user_id == user_id, Task.source.in_(["ai_plan", "ai_breakdown"]), Task.title.like(project_title + " —%"))
+                .limit(1)
+            ) is not None
+
+    def delete_ai_tasks(self, user_id: int, project_id: int) -> int:
+        """Delete all AI-generated tasks (plan or breakdown) for a project. Returns count deleted."""
+        with Session(self.engine) as s:
+            result = s.execute(
+                delete(Task)
+                .where(Task.user_id == user_id, Task.project_id == project_id, Task.source.in_(["ai_plan", "ai_breakdown"]))
+            )
             s.commit()
             return result.rowcount
 
-    def upcoming(self, days: int = 7) -> List[Task]:
+    def delete_all_ai_tasks(self, user_id: int) -> int:
+        """Delete all AI-generated tasks across all projects. Returns count deleted."""
+        with Session(self.engine) as s:
+            result = s.execute(delete(Task).where(Task.user_id == user_id, Task.source.in_(["ai_plan", "ai_breakdown"])))
+            s.commit()
+            return result.rowcount
+
+    def upcoming(self, user_id: int, days: int = 7) -> List[Task]:
         from datetime import timedelta
         today = config.get_today()
         end = today + timedelta(days=days)
         with Session(self.engine) as s:
             return list(s.scalars(
                 select(Task)
-                .where(Task.due_date <= end, Task.status == TaskStatus.pending)
+                .where(Task.user_id == user_id, Task.due_date <= end, Task.status == TaskStatus.pending)
                 .order_by(Task.due_date)
             ))
+
+
+class ProcessedSourceRepo:
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
+    def exists(self, user_id: int, source_id: str) -> bool:
+        with Session(self.engine) as s:
+            return s.scalar(select(ProcessedSource).where(ProcessedSource.user_id == user_id, ProcessedSource.source_id == source_id)) is not None
+
+    def save_many(self, user_id: int, source_ids: List[str]) -> None:
+        with Session(self.engine) as s:
+            s.add_all([ProcessedSource(user_id=user_id, source_id=sid) for sid in source_ids])
+            s.commit()
 
 
 class DailyPlanRepo:
     def __init__(self, engine: Engine):
         self.engine = engine
 
-    def get_or_create(self, d: date) -> DailyPlan:
+    def get_or_create(self, user_id: int, d: date) -> DailyPlan:
         with Session(self.engine) as s:
-            plan = s.scalar(select(DailyPlan).where(DailyPlan.date == d))
+            plan = s.scalar(select(DailyPlan).where(DailyPlan.user_id == user_id, DailyPlan.date == d))
             if not plan:
-                plan = DailyPlan(date=d, task_ids=[])
+                plan = DailyPlan(user_id=user_id, date=d, task_ids=[])
                 s.add(plan)
                 s.commit()
                 s.refresh(plan)
             return plan
 
-    def mark_sent(self, plan_id: int) -> None:
+    def mark_sent(self, user_id: int, plan_id: int) -> None:
         with Session(self.engine) as s:
-            s.execute(update(DailyPlan).where(DailyPlan.id == plan_id).values(sent_at=datetime.utcnow()))
+            s.execute(update(DailyPlan).where(DailyPlan.user_id == user_id, DailyPlan.id == plan_id).values(sent_at=datetime.utcnow()))
             s.commit()

@@ -1,22 +1,19 @@
-# Reminder Bot - Project Plan
-## Current Status
-- [x] Multi-source sync (Google Calendar, Gmail, Canvas)
-- [x] AI Task Extraction (Haiku)
-- [x] Project Estimation and Checklist Generation (Sonnet)
-- [x] Database schema and repository pattern
-- [x] Basic Telegram bot commands (/today, /projects, /sync, /totalsync)
-- [x] Scheduled digests (Morning, Evening, Weekly, Monthly)
-- [x] Google Calendar write-back for deadlines and study sessions
-- [x] Fix missing Telegram command registrations for confirmation flow
-- [x] Add `/adjust_hours` to the checklist conversation state
-- [x] Add unit tests for `bot/conversations.py` (checklist flow)
-- [x] Implement OCR/Vision fallback for document parsing using Claude 3.5 Sonnet
-- [x] Allow marking exams/assessments as done via inline buttons (if overdue or due today)
+# Reminder Bot Project Plan
 
-## Pending Tasks
-- [ ] Implement robust error handling for document parsing
-- [ ] Verify Railway deployment setup
+## Completed
+- [x] Initial setup and bot structure.
+- [x] Google Calendar, Gmail, and Canvas integrations.
+- [x] AI task extraction (Claude Haiku).
+- [x] Project estimation and breakdown (Claude Sonnet).
+- [x] Database persistence (SQLAlchemy).
+- [x] Automated digests and recaps (APScheduler).
+- [x] **Auto-delete strategy**:
+    - [x] Added `ProcessedSource` for deduplication memory.
+    - [x] Added `completed_at` to tasks.
+    - [x] Implemented daily cleanup job.
+    - [x] Optimized iCal sync to skip past events.
 
-## In Progress
-- [ ] Finalizing improvements and verifying deployment setup
-
+## To Do
+- [ ] Multi-user support (Verify full deployment and isolation).
+- [x] Improved snooze options (Interactive buttons in digest).
+- [x] Interactive checklist management (Interactive buttons for confirmation).

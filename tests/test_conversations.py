@@ -31,6 +31,8 @@ def create_mock_update(text=None, document=None, args=None):
     message.chat.id = 12345
     update.message = message
     update.effective_chat = message.chat
+    update.effective_user = MagicMock(spec=User)
+    update.effective_user.id = 12345
     return update
 
 def create_mock_context(engine, args=None, user_data=None, bot_data=None):
@@ -44,12 +46,12 @@ def create_mock_context(engine, args=None, user_data=None, bot_data=None):
 @pytest.fixture
 def unconfirmed_project(engine):
     repo = ProjectRepo(engine)
-    return repo.save(Project(title="Pending Project", source="test", confirmed=False))
+    return repo.save(Project(user_id=1, title="Pending Project", source="test", confirmed=False))
 
 @pytest.fixture
 def confirmed_project(engine):
     repo = ProjectRepo(engine)
-    return repo.save(Project(title="Confirmed Project", source="test", confirmed=True))
+    return repo.save(Project(user_id=1, title="Confirmed Project", source="test", confirmed=True))
 
 @pytest.mark.asyncio
 async def test_start_checklist_flow_no_projects(engine):
@@ -369,7 +371,7 @@ async def test_adjust_hours_with_index(mock_estimate, engine, pending_proposal):
     }
     
     repo = ProjectRepo(engine)
-    repo.save(Project(id=999, title="Project 2", source="test", confirmed=False))
+    repo.save(Project(user_id=1, id=999, title="Project 2", source="test", confirmed=False))
 
     result = await adjust_hours(update, context)
     

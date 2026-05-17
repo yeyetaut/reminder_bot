@@ -26,6 +26,23 @@ from integrations.google_calendar import create_event
 
 logger = logging.getLogger(__name__)
 
+def _get_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from db.repository import UserRepo
+    import config
+    engine = context.bot_data["engine"]
+    user_repo = UserRepo(engine)
+    telegram_id = update.effective_user.id
+    user = user_repo.get_by_telegram_id(telegram_id)
+    if not user:
+        chat_id = update.effective_chat.id
+        user = user_repo.create_user(
+            telegram_id=telegram_id,
+            chat_id=chat_id,
+            timezone=config.TIMEZONE,
+            canvas_ical_url=config.CANVAS_ICAL_URL,
+        )
+    return user
+
 # ConversationHandler states
 AWAITING_PROJECT_SELECTION = 1
 AWAITING_FILE_UPLOAD = 2
@@ -42,8 +59,9 @@ def _get_proposals(context: ContextTypes.DEFAULT_TYPE) -> list:
 
 async def start_checklist_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point: User runs /checklist."""
-    _, project_repo, _ = _repos(context)
-    unconfirmed = project_repo.list_unconfirmed()
+    user = _get_user(update, context)
+    _, project_repo, _, _ = _repos(context)
+    unconfirmed = project_repo.list_unconfirmed(user.id)
     
     if not unconfirmed:
         await update.message.reply_text(
@@ -63,13 +81,14 @@ async def start_checklist_flow(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def select_project(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """User replied with a project number."""
+    user = _get_user(update, context)
     if not update.message.text or not update.message.text.isdigit():
         await update.message.reply_text("Please enter a valid project number or /cancel.")
         return AWAITING_PROJECT_SELECTION
 
     idx = int(update.message.text) - 1
-    _, project_repo, _ = _repos(context)
-    unconfirmed = project_repo.list_unconfirmed()
+    _, project_repo, _, _ = _repos(context)
+    unconfirmed = project_repo.list_unconfirmed(user.id)
 
     if idx < 0 or idx >= len(unconfirmed):
         await update.message.reply_text(f"Invalid number. Choose 1 to {len(unconfirmed)} or /cancel.")
@@ -89,6 +108,7 @@ async def select_project(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """User uploaded a file or text."""
+    user = _get_user(update, context)
     text = ""
     
     # Check for 'skip'
@@ -140,7 +160,15 @@ async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await update.message.reply_text("Generating checklist using AI... 🤖")
 
-    proposal = estimate_project(project) 
+    from utils.security import decrypt_string
+    anthropic_key = decrypt_string(user.anthropic_api_key_encrypted) if user.anthropic_api_key_encrypted else None
+    gemini_key = decrypt_string(user.gemini_api_key_encrypted) if user.gemini_api_key_encrypted else None
+
+    proposal = estimate_project(
+        project,
+        anthropic_api_key=anthropic_key,
+        gemini_api_key=gemini_key,
+    ) 
     if proposal:
         await send_proposal(context, update.effective_chat.id, proposal)
     else:
@@ -156,9 +184,9 @@ async def cancel_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 def _repos(context: ContextTypes.DEFAULT_TYPE):
     # Helper to get repos from bot_data engine
-    from db.repository import TaskRepo, ProjectRepo, DailyPlanRepo
+    from db.repository import TaskRepo, ProjectRepo, DailyPlanRepo, ProcessedSourceRepo
     engine = context.bot_data["engine"]
-    return TaskRepo(engine), ProjectRepo(engine), DailyPlanRepo(engine)
+    return TaskRepo(engine), ProjectRepo(engine), DailyPlanRepo(engine), ProcessedSourceRepo(engine)
 
 
 async def send_proposal(
@@ -167,13 +195,27 @@ async def send_proposal(
     proposal: Dict[str, Any],
 ) -> None:
     """Append a proposal to the pending list and send it to the user."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     proposals = _get_proposals(context)
     proposals.append(proposal)
     idx = len(proposals)
     text = format_proposal_message(proposal)
     if idx > 1:
         text = f"*\\[Project {idx}\\]* " + text
-    await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
+    
+    buttons = [
+        [
+            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_est_{idx-1}"),
+            InlineKeyboardButton("⏭️ Skip", callback_data=f"skip_est_{idx-1}"),
+        ]
+    ]
+    
+    await context.bot.send_message(
+        chat_id=chat_id, 
+        text=text, 
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 
 async def _notify_remaining(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
@@ -211,8 +253,89 @@ def _resolve_proposal(context: ContextTypes.DEFAULT_TYPE, args) -> tuple:
     return proposals[idx], idx, None
 
 
+async def handle_callback_confirm_est(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback version of confirm_estimate."""
+    query = update.callback_query
+    await query.answer()
+    
+    idx = int(query.data.split("_")[-1])
+    proposals = _get_proposals(context)
+    if idx < 0 or idx >= len(proposals):
+        await query.edit_message_text("This proposal is no longer valid.")
+        return
+    
+    proposal = proposals[idx]
+    user = _get_user(update, context)
+    
+    engine = context.bot_data["engine"]
+    task_repo, project_repo, _, _ = _repos(context)
+
+    project_id = proposal["project_id"]
+    sub_tasks = proposal.get("sub_tasks", [])
+
+    # Save sub-tasks
+    tasks = []
+    for st in sub_tasks:
+        task = Task(
+            user_id=user.id,
+            project_id=project_id,
+            title=f"{proposal['project_title']} — {st['title']}",
+            description=st['description'],
+            scheduled_date=None,
+            due_date=None,
+            source="ai_breakdown",
+            status=TaskStatus.pending,
+        )
+        tasks.append(task)
+
+    if tasks:
+        task_repo.save_many(tasks)
+    
+    # Mark project as confirmed
+    project_repo.confirm(user.id, project_id, 0)
+
+    # Update message to show it's confirmed
+    await query.edit_message_text(
+        f"✅ *Checklist confirmed for {proposal['project_title']}*\n\n"
+        f"Added {len(tasks)} tasks to your project breakdown.",
+        parse_mode="Markdown"
+    )
+    
+    proposals.pop(idx)
+    await _notify_remaining(context, update.effective_chat.id)
+
+
+async def handle_callback_skip_est(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback version of skip_estimate."""
+    query = update.callback_query
+    await query.answer()
+    
+    idx = int(query.data.split("_")[-1])
+    proposals = _get_proposals(context)
+    if idx < 0 or idx >= len(proposals):
+        await query.edit_message_text("This proposal is no longer valid.")
+        return
+        
+    proposal = proposals[idx]
+    user = _get_user(update, context)
+    
+    engine = context.bot_data["engine"]
+    _, project_repo, _, _ = _repos(context)
+    
+    project_repo.confirm(user.id, proposal["project_id"], 0)
+    proposals.pop(idx)
+
+    await query.edit_message_text(
+        f"⏭️ *Skipped planning for {proposal['project_title']}*\n\n"
+        "It will still appear in your project list.",
+        parse_mode="Markdown",
+    )
+    await _notify_remaining(context, update.effective_chat.id)
+
+
 async def confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """User accepted the AI checklist — create Task rows."""
+    user = _get_user(update, context)
     proposal, idx, err = _resolve_proposal(context, context.args)
     if err:
         await update.message.reply_text(err, parse_mode="Markdown")
@@ -229,6 +352,7 @@ async def confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     tasks = []
     for st in sub_tasks:
         task = Task(
+            user_id=user.id,
             project_id=project_id,
             title=f"{proposal['project_title']} — {st['title']}",
             description=st['description'],
@@ -243,7 +367,7 @@ async def confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         task_repo.save_many(tasks)
     
     # Mark project as confirmed (estimated_hours is now optional/0)
-    project_repo.confirm(project_id, 0)
+    project_repo.confirm(user.id, project_id, 0)
 
     reply = (
         f"✅ Checklist confirmed for *{proposal['project_title']}*\\!\n"
@@ -257,6 +381,7 @@ async def confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def adjust_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = _get_user(update, context)
     """User wants to adjust the estimated hours — re-run estimator with override.
 
     Usage:
@@ -303,7 +428,15 @@ async def adjust_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     proposal["estimated_hours"] = new_hours
     # Rebuild daily sessions to match new hour total
     from ai.estimator import estimate_project as _estimate
-    new_proposal = _estimate(project)
+    from utils.security import decrypt_string
+    anthropic_key = decrypt_string(user.anthropic_api_key_encrypted) if user.anthropic_api_key_encrypted else None
+    gemini_key = decrypt_string(user.gemini_api_key_encrypted) if user.gemini_api_key_encrypted else None
+
+    new_proposal = _estimate(
+        project,
+        anthropic_api_key=anthropic_key,
+        gemini_api_key=gemini_key,
+    )
     if new_proposal:
         # Scale sessions to match user's requested hours
         total = sum(s["hours"] for s in new_proposal.get("daily_sessions", []))
@@ -326,6 +459,7 @@ async def adjust_hours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """User wants to skip daily breakdown — mark project confirmed with no sessions."""
+    user = _get_user(update, context)
     proposal, idx, err = _resolve_proposal(context, context.args)
     if err:
         await update.message.reply_text(err, parse_mode="Markdown")
@@ -333,7 +467,7 @@ async def skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     engine = context.bot_data["engine"]
     project_repo = ProjectRepo(engine)
-    project_repo.confirm(proposal["project_id"], proposal.get("estimated_hours", 0))
+    project_repo.confirm(user.id, proposal["project_id"], proposal.get("estimated_hours", 0))
     _get_proposals(context).pop(idx)
 
     await update.message.reply_text(

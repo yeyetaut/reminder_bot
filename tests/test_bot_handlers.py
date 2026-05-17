@@ -17,6 +17,8 @@ def create_mock_update(task_id: int):
     update = MagicMock(spec=Update)
     update.callback_query = query
     update.effective_chat = query.message.chat
+    update.effective_user = MagicMock(spec=User)
+    update.effective_user.id = 12345
     return update, query
 
 def create_mock_context(engine):
@@ -28,7 +30,7 @@ def create_mock_context(engine):
 @pytest.mark.asyncio
 async def test_handle_callback_done_success(engine, mocker):
     repo = TaskRepo(engine)
-    task = repo.save(Task(title="Test Task", source="test", status=TaskStatus.pending))
+    task = repo.save(Task(user_id=1, title="Test Task", source="test", status=TaskStatus.pending))
     
     update, query = create_mock_update(task.id)
     context = create_mock_context(engine)
@@ -36,7 +38,7 @@ async def test_handle_callback_done_success(engine, mocker):
     await handle_callback_done(update, context)
 
     query.answer.assert_called_once()
-    assert repo.get_by_id(task.id).status == TaskStatus.done
+    assert repo.get_by_id(1, task.id).status == TaskStatus.done
     query.edit_message_text.assert_called_once()
     context.bot.send_message.assert_called_once()
     args, kwargs = context.bot.send_message.call_args
@@ -46,7 +48,7 @@ async def test_handle_callback_done_success(engine, mocker):
 @pytest.mark.asyncio
 async def test_handle_callback_done_idempotency(engine, mocker):
     repo = TaskRepo(engine)
-    task = repo.save(Task(title="Already Done", source="test", status=TaskStatus.done))
+    task = repo.save(Task(user_id=1, title="Already Done", source="test", status=TaskStatus.done))
     
     update, query = create_mock_update(task.id)
     context = create_mock_context(engine)
@@ -54,7 +56,7 @@ async def test_handle_callback_done_idempotency(engine, mocker):
     await handle_callback_done(update, context)
 
     query.answer.assert_called_once()
-    assert repo.get_by_id(task.id).status == TaskStatus.done
+    assert repo.get_by_id(1, task.id).status == TaskStatus.done
     # Because it returns early, edit_message_text and send_message shouldn't be called
     query.edit_message_text.assert_not_called()
     context.bot.send_message.assert_not_called()
@@ -74,7 +76,7 @@ async def test_handle_callback_done_task_not_found(engine, mocker):
 async def test_handle_callback_done_markdown_escaping(engine, mocker):
     repo = TaskRepo(engine)
     # Title with markdown special characters
-    task = repo.save(Task(title="Test_Task *with* `special` [chars]", source="test", status=TaskStatus.pending))
+    task = repo.save(Task(user_id=1, title="Test_Task *with* `special` [chars]", source="test", status=TaskStatus.pending))
     
     update, query = create_mock_update(task.id)
     context = create_mock_context(engine)
@@ -92,7 +94,7 @@ async def test_handle_callback_done_markdown_escaping(engine, mocker):
 async def test_handle_callback_done_message_not_modified(engine, mocker):
     from telegram.error import BadRequest
     repo = TaskRepo(engine)
-    task = repo.save(Task(title="Test Task", source="test", status=TaskStatus.pending))
+    task = repo.save(Task(user_id=1, title="Test Task", source="test", status=TaskStatus.pending))
     
     update, query = create_mock_update(task.id)
     # Mock edit_message_text to raise BadRequest "Message is not modified"
@@ -103,7 +105,7 @@ async def test_handle_callback_done_message_not_modified(engine, mocker):
     await handle_callback_done(update, context)
 
     query.answer.assert_called_once()
-    assert repo.get_by_id(task.id).status == TaskStatus.done
+    assert repo.get_by_id(1, task.id).status == TaskStatus.done
     # send_message should STILL be called even if edit_message_text raises that specific error
     context.bot.send_message.assert_called_once()
 
@@ -111,7 +113,7 @@ async def test_handle_callback_done_message_not_modified(engine, mocker):
 async def test_handle_callback_done_other_edit_error(engine, mocker):
     from telegram.error import BadRequest
     repo = TaskRepo(engine)
-    task = repo.save(Task(title="Test Task", source="test", status=TaskStatus.pending))
+    task = repo.save(Task(user_id=1, title="Test Task", source="test", status=TaskStatus.pending))
     
     update, query = create_mock_update(task.id)
     # Mock edit_message_text to raise a different BadRequest
@@ -122,7 +124,7 @@ async def test_handle_callback_done_other_edit_error(engine, mocker):
     await handle_callback_done(update, context)
 
     query.answer.assert_called_once()
-    assert repo.get_by_id(task.id).status == TaskStatus.done
+    assert repo.get_by_id(1, task.id).status == TaskStatus.done
     context.bot.send_message.assert_called_once()
 
 @pytest.mark.asyncio
@@ -133,8 +135,8 @@ async def test_handle_callback_done_integration_with_projects(engine, mocker):
     task_repo = TaskRepo(engine)
     proj_repo = ProjectRepo(engine)
     
-    project = proj_repo.save(Project(title="Test Project", source="test"))
-    task = task_repo.save(Task(title="Proj Task", source="test", project_id=project.id, status=TaskStatus.pending))
+    project = proj_repo.save(Project(user_id=1, title="Test Project", source="test"))
+    task = task_repo.save(Task(user_id=1, title="Proj Task", source="test", project_id=project.id, status=TaskStatus.pending))
     
     update, query = create_mock_update(task.id)
     context = create_mock_context(engine)
@@ -144,7 +146,7 @@ async def test_handle_callback_done_integration_with_projects(engine, mocker):
     
     # Verify integration worked seamlessly
     query.answer.assert_called_once()
-    assert task_repo.get_by_id(task.id).status == TaskStatus.done
+    assert task_repo.get_by_id(1, task.id).status == TaskStatus.done
     query.edit_message_text.assert_called_once()
     
     args, kwargs = query.edit_message_text.call_args

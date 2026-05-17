@@ -54,6 +54,15 @@ def _fetch_ical(url: str, source_name: str) -> List[Dict[str, Any]]:
             # Use the most specific date available as the deadline
             end = dtend or due or dtstart
 
+            # Optimization: skip events that ended more than RETENTION_DAYS ago
+            if end:
+                try:
+                    end_date = date.fromisoformat(end[:10])
+                    if (config.get_today() - end_date).days > config.RETENTION_DAYS:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
             events.append({
                 "source": source_name,
                 "source_id": f"{source_name}::{uid}",
@@ -75,5 +84,7 @@ def _fetch_ical(url: str, source_name: str) -> List[Dict[str, Any]]:
         return []
 
 
-def fetch_canvas_events() -> List[Dict[str, Any]]:
-    return _fetch_ical(config.CANVAS_ICAL_URL, "canvas")
+def fetch_canvas_events(canvas_url: str | None = None) -> List[Dict[str, Any]]:
+    if not canvas_url:
+        return []
+    return _fetch_ical(canvas_url, "canvas")

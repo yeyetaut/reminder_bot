@@ -18,7 +18,7 @@ from typing import List, Dict, Any, Tuple
 
 import config
 from db.models import Task, Project, TaskStatus
-from db.repository import TaskRepo, ProjectRepo
+from db.repository import TaskRepo, ProjectRepo, ProcessedSourceRepo
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +67,13 @@ def _normalize_title(title: str) -> str:
     return _STUDY_PREFIX.sub("", title.strip()).lower().strip()
 
 
-def _is_duplicate_project(title: str, project_repo: ProjectRepo) -> bool:
+def _is_duplicate_project(title: str, project_repo: ProjectRepo, user_id: int) -> bool:
     """Return True if an existing project has a similar title (>=72% similarity).
     Strips [study] prefixes before comparing so calendar study sessions
     don't re-trigger proposals for already-known projects.
     """
     normalized = _normalize_title(title)
-    for existing in project_repo.list_all():
+    for existing in project_repo.list_all(user_id):
         ratio = SequenceMatcher(None, normalized, _normalize_title(existing.title)).ratio()
         if ratio >= 0.72:
             logger.info(f"  [DUP SKIP] '{title}' matches existing '{existing.title}' ({ratio:.2f})")
@@ -85,6 +85,8 @@ def _filter_new(
     items: List[Dict[str, Any]],
     task_repo: TaskRepo,
     project_repo: ProjectRepo,
+    processed_repo: ProcessedSourceRepo,
+    user_id: int,
 ) -> List[Dict[str, Any]]:
     """Return only items not already stored in the DB.
 
@@ -101,15 +103,23 @@ def _filter_new(
         if item.get("source") == "google_calendar" and _BOT_PREFIX.match(title):
             logger.debug(f"  [BOT SKIP] Ignoring own bot event: {title!r}")
             continue
-        if not task_repo.exists_by_source_id(sid) and project_repo.get_by_source_id(sid) is None:
-            new_items.append(item)
+        
+        # Check Task, Project, and ProcessedSource
+        if task_repo.exists_by_source_id(user_id, sid):
+            continue
+        if project_repo.get_by_source_id(user_id, sid) is not None:
+            continue
+        if processed_repo.exists(user_id, sid):
+            continue
+            
+        new_items.append(item)
     return new_items
 
 
-def _call_claude(prompt: str) -> str:
+def _call_claude(prompt: str, api_key: str | None = None) -> str:
     """Call Claude. Raises on any error."""
     import anthropic
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=api_key or config.ANTHROPIC_API_KEY)
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=4096,
@@ -118,15 +128,15 @@ def _call_claude(prompt: str) -> str:
     return response.content[0].text.strip()
 
 
-def _call_gemini(prompt: str, model: str) -> str:
+def _call_gemini(prompt: str, model: str, api_key: str | None = None) -> str:
     """Call a Gemini model. Raises on any error."""
     from google import genai
-    client = genai.Client(api_key=config.GEMINI_API_KEY)
+    client = genai.Client(api_key=api_key or config.GEMINI_API_KEY)
     response = client.models.generate_content(model=model, contents=prompt)
     return response.text.strip()
 
 
-def _call_ai(prompt: str) -> Tuple[str, str]:
+def _call_ai(prompt: str, anthropic_api_key: str | None = None, gemini_api_key: str | None = None) -> Tuple[str, str]:
     """
     Try AI providers in order. Returns (raw_text, model_used).
     Includes retry logic for transient errors.
@@ -135,10 +145,10 @@ def _call_ai(prompt: str) -> Tuple[str, str]:
     errors = []
 
     # 1. Claude Haiku (primary)
-    if config.ANTHROPIC_API_KEY:
+    if anthropic_api_key or config.ANTHROPIC_API_KEY:
         for attempt in range(3):
             try:
-                raw = _call_claude(prompt)
+                raw = _call_claude(prompt, anthropic_api_key)
                 logger.info(f"Extractor: Claude Haiku call successful (attempt {attempt+1})")
                 return raw, "claude-haiku"
             except Exception as e:
@@ -154,10 +164,10 @@ def _call_ai(prompt: str) -> Tuple[str, str]:
                     time.sleep(2 ** attempt)  # 1s, 2s backoff
         
     # 2. Gemini (fallback)
-    if config.GEMINI_API_KEY:
+    if gemini_api_key or config.GEMINI_API_KEY:
         for attempt in range(2):
             try:
-                raw = _call_gemini(prompt, "gemini-1.5-pro")
+                raw = _call_gemini(prompt, "gemini-1.5-pro", gemini_api_key)
                 logger.info(f"Extractor: Gemini 1.5 Pro call successful (attempt {attempt+1})")
                 return raw, "gemini-1.5-pro"
             except Exception as e:
@@ -176,6 +186,7 @@ def _call_ai(prompt: str) -> Tuple[str, str]:
 def _fallback_save(
     items: List[Dict[str, Any]],
     task_repo: TaskRepo,
+    user_id: int,
 ) -> Tuple[List[Task], List[Project]]:
     """
     Save calendar events directly as tasks without AI filtering.
@@ -202,6 +213,7 @@ def _fallback_save(
                 pass
 
         task = Task(
+            user_id=user_id,
             title=item.get("title", "Untitled"),
             source=source or "unknown",
             source_id=sid,
@@ -251,18 +263,23 @@ def _extract_json_array(text: str) -> List[Dict[str, Any]]:
     raise ValueError("Could not find a valid JSON array in AI response")
 
 
+from typing import Optional
 def extract_and_save(
     calendar_events: List[Dict[str, Any]],
     emails: List[Dict[str, Any]],
     task_repo: TaskRepo,
     project_repo: ProjectRepo,
+    processed_repo: ProcessedSourceRepo,
+    user_id: int,
+    anthropic_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
 ) -> Tuple[List[Task], List[Project], str | None]:
     """
     Main entry point. Filters new items, calls AI in batches, saves results.
     Returns (new_tasks, new_projects, ai_error_message).
     """
     all_items = calendar_events + emails
-    new_items = _filter_new(all_items, task_repo, project_repo)
+    new_items = _filter_new(all_items, task_repo, project_repo, processed_repo, user_id)
 
     if not new_items:
         logger.info("Extractor: no new items to process")
@@ -287,12 +304,12 @@ def extract_and_save(
         prompt = EXTRACTION_PROMPT + json.dumps(compact_items, indent=2)
 
         try:
-            raw, model_used = _call_ai(prompt)
+            raw, model_used = _call_ai(prompt, anthropic_api_key, gemini_api_key)
         except Exception as e:
             logger.error(f"Extractor: batch {batch_num} failed: {e}")
             all_errors.append(f"Batch {batch_num}: {e}")
             # Fallback for calendar/canvas items in this batch
-            b_tasks, b_projects = _fallback_save(batch, task_repo)
+            b_tasks, b_projects = _fallback_save(batch, task_repo, user_id)
             new_tasks.extend(b_tasks)
             new_projects.extend(b_projects)
             continue
@@ -326,10 +343,11 @@ def extract_and_save(
 
             if entry.get("is_project"):
                 proj_title = entry.get("title", "Untitled project")
-                if _is_duplicate_project(proj_title, project_repo):
+                if _is_duplicate_project(proj_title, project_repo, user_id):
                     logger.info(f"  [DUP DROP] Skipping project '{proj_title}' — already exists")
                     continue
                 project = Project(
+                    user_id=user_id,
                     title=proj_title,
                     source=source,
                     source_id=sid,
@@ -342,6 +360,7 @@ def extract_and_save(
                 logger.info(f"  [PROJECT] {project.title} (due {due})")
             else:
                 task = Task(
+                    user_id=user_id,
                     title=entry.get("title", "Untitled task"),
                     source=source,
                     source_id=sid,

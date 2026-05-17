@@ -27,7 +27,7 @@ def test_estimate_project_success(mocker):
     import json
     mocker.patch("ai.estimator._call_ai", return_value=(json.dumps(mock_response), "mock-model"))
     
-    project = Project(id=1, title="Test", source="test", due_date=date(2024, 5, 10))
+    project = Project(user_id=1, id=1, title="Test", source="test", due_date=date(2024, 5, 10))
     proposal = estimate_project(project)
     
     assert proposal is not None
@@ -39,7 +39,7 @@ def test_estimate_project_success(mocker):
 def test_estimate_project_failure(mocker):
     mocker.patch("ai.estimator._call_ai", side_effect=RuntimeError("AI Error"))
     
-    project = Project(id=1, title="Test", source="test")
+    project = Project(user_id=1, id=1, title="Test", source="test")
     proposal = estimate_project(project)
     
     assert proposal is None
