@@ -236,13 +236,26 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pending_count = s.scalar(select(func.count(Task.id)).where(Task.user_id == user.id, Task.status == TaskStatus.pending))
         proj_count = s.scalar(select(func.count(Project.id)).where(Project.user_id == user.id))
 
+    google_status = "✅ Linked" if user.google_credentials_encrypted else "❌ Not Linked"
+    canvas_status = f"✅ Linked (<code>{user.canvas_ical_url[:15]}...</code>)" if user.canvas_ical_url else "❌ Not Linked"
+    anthropic_status = "✅ Set" if user.anthropic_api_key_encrypted else "❌ Not Set"
+    gemini_status = "✅ Set" if user.gemini_api_key_encrypted else "❌ Not Set"
+
     await update.message.reply_text(
-        f"📊 *Database Status:*\n"
+        f"📊 <b>User Status</b>\n\n"
+        f"<b>Data Overview:</b>\n"
         f"• Total Tasks: {task_count}\n"
         f"• Pending Tasks: {pending_count}\n"
-        f"• Total Projects: {proj_count}\n"
-        f"• DB URL: `{config.DATABASE_URL.split('@')[-1]}`", # Hide credentials if any
-        parse_mode="Markdown"
+        f"• Total Projects: {proj_count}\n\n"
+        f"<b>Integrations:</b>\n"
+        f"• Google Account: {google_status}\n"
+        f"• Canvas Feed: {canvas_status}\n"
+        f"• Anthropic Key: {anthropic_status}\n"
+        f"• Gemini Key: {gemini_status}\n\n"
+        f"<b>Environment:</b>\n"
+        f"• Timezone: <code>{user.timezone}</code>\n"
+        f"• DB Host: <code>{config.DATABASE_URL.split('@')[-1].split('/')[0]}</code>",
+        parse_mode="HTML"
     )
 
 
@@ -479,13 +492,14 @@ async def _run_sync(update, context, days_back: int, label: str, user):
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
-    # Add new non-calendar tasks to Google Calendar as deadline events
-    from integrations.google_calendar import find_event_by_title
-    for task in new_tasks:
-        if task.source != "google_calendar" and task.due_date:
+    # Sync all pending non-calendar tasks to Google Calendar
+    unsynced = task_repo.unsynced_tasks(user.id)
+    if unsynced:
+        from integrations.google_calendar import find_event_by_title
+        synced_count = 0
+        for task in unsynced:
             title = f"[Deadline] {task.title}"
             if find_event_by_title(title, task.due_date.isoformat(), user_credentials=google_creds):
-                logger.info(f"Skipping deadline event creation for '{task.title}' — already exists on GCal")
                 task_repo.mark_gcal_synced(user.id, task.id)
                 continue
 
@@ -497,6 +511,10 @@ async def _run_sync(update, context, days_back: int, label: str, user):
             )
             if event_id:
                 task_repo.mark_gcal_synced(user.id, task.id)
+                synced_count += 1
+        
+        if synced_count > 0:
+            await update.message.reply_text(f"📅 Added {synced_count} new deadline event(s) to your Google Calendar.")
 
     for project in new_projects:
         # Instead of immediate AI estimation, create a reminder task to upload context

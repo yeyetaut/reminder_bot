@@ -155,9 +155,10 @@ async def job_auto_sync(bot, engine):
                 gemini_api_key=gemini_key,
             )
 
-            # Add new non-calendar tasks to Google Calendar as deadline events
-            for task in new_tasks:
-                if task.source != "google_calendar" and task.due_date:
+            # Sync all pending non-calendar tasks to Google Calendar
+            unsynced = task_repo.unsynced_tasks(user.id)
+            if unsynced:
+                for task in unsynced:
                     title = f"[Deadline] {task.title}"
                     if find_event_by_title(title, task.due_date.isoformat(), user_credentials=google_creds):
                         logger.info(f"Skipping deadline event creation for '{task.title}' — already exists on GCal")
