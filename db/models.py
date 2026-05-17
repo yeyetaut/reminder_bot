@@ -74,7 +74,7 @@ class Task(Base):
     scheduled_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     source: Mapped[str] = mapped_column(String, nullable=False)
     source_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    status: Mapped[TaskStatus] = mapped_column(SAEnum(TaskStatus), default=TaskStatus.pending)
+    status: Mapped[TaskStatus] = mapped_column(SAEnum(TaskStatus, native_enum=False, length=50), default=TaskStatus.pending)
     gcal_synced: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
