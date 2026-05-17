@@ -8,6 +8,7 @@ from typing import List
 import config
 from db.models import Task, Project, TaskStatus
 from db.repository import TaskRepo, ProjectRepo
+from utils.format import escape_md
 
 
 def _due_label(task: Task) -> str:
@@ -64,12 +65,12 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int)
                 continue
             
             project_displayed = True
-            lines.append(f"· *{p.title}*")
+            lines.append(f"· *{escape_md(p.title)}*")
             # Show top 3 tasks that remain
             for st in pending[:3]:
                 # Strip project prefix from sub-task title for cleaner display
                 display_title = st.title.split(" — ")[-1] if " — " in st.title else st.title
-                lines.append(f"  ▫️ {display_title}")
+                lines.append(f"  ▫️ {escape_md(display_title)}")
             
             if len(pending) > 3:
                 lines.append(f"  _...and {len(pending)-3} more_")
@@ -83,18 +84,18 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int)
         lines.append("🟢 *Deadlines & Tasks*")
         for task in tasks:
             label = _due_label(task)
-            lines.append(f"· {task.title}{label}")
+            lines.append(f"· {escape_md(task.title)}{label}")
             if task.description:
-                lines.append(f"  _{task.description}_")
+                lines.append(f"  _{escape_md(task.description)}_")
             lines.append("") # Extra space between deadlines
 
     if exams:
         lines.append("🔴 *Exams*")
         for exam in exams:
             label = _due_label(exam)
-            lines.append(f"· {exam.title}{label}")
+            lines.append(f"· {escape_md(exam.title)}{label}")
             if exam.description:
-                lines.append(f"  _{exam.description}_")
+                lines.append(f"  _{escape_md(exam.description)}_")
             lines.append("") # Extra space between exams
 
     # Footer with IDs for reference (only tasks with deadlines/exams)
@@ -130,13 +131,13 @@ def evening_recap(task_repo: TaskRepo, user_id: int) -> str:
     if done:
         lines.append("🟢 *Completed*")
         for t in done:
-            lines.append(f"· {t.title}")
+            lines.append(f"· {escape_md(t.title)}")
             lines.append("")
 
     if tomorrow_tasks:
         lines.append("🟢 *Coming up next*")
         for t in tomorrow_tasks:
-            lines.append(f"· {t.title}{_due_label(t)}")
+            lines.append(f"· {escape_md(t.title)}{_due_label(t)}")
             lines.append("")
 
     return "\n".join(lines)
@@ -157,13 +158,13 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int
     if tasks:
         lines.append(f"🟢 *Tasks ({len(tasks)})*")
         for t in tasks:
-            lines.append(f"· {t.title}{_due_label(t)}")
+            lines.append(f"· {escape_md(t.title)}{_due_label(t)}")
             lines.append("")
 
     if exams:
         lines.append(f"🔴 *Exams ({len(exams)})*")
         for t in exams:
-            lines.append(f"· {t.title}{_due_label(t)}")
+            lines.append(f"· {escape_md(t.title)}{_due_label(t)}")
             lines.append("")
 
     if active_projects:
@@ -171,7 +172,7 @@ def weekly_overview(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int
         for p in active_projects:
             pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
             due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
-            lines.append(f"· {p.title} · _{len(pending)} tasks left · due {due_str}_")
+            lines.append(f"· {escape_md(p.title)} · _{len(pending)} tasks left · due {due_str}_")
             lines.append("")
 
     if not deadlines and not active_projects:
@@ -196,14 +197,14 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: in
         lines.append(f"🟢 *Deadlines ({len(tasks)})*")
         for t in tasks:
             due = t.due_date.strftime('%b %d') if t.due_date else "?"
-            lines.append(f"· {due} · {t.title}")
+            lines.append(f"· {due} · {escape_md(t.title)}")
             lines.append("")
 
     if exams:
         lines.append(f"🔴 *Exams ({len(exams)})*")
         for t in exams:
             due = t.due_date.strftime('%b %d') if t.due_date else "?"
-            lines.append(f"· {due} · {t.title}")
+            lines.append(f"· {due} · {escape_md(t.title)}")
             lines.append("")
 
     if active_projects:
@@ -211,7 +212,7 @@ def monthly_overview(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: in
         for p in active_projects:
             due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
             pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
-            lines.append(f"· {p.title} · _{len(pending)} tasks left · due {due_str}_")
+            lines.append(f"· {escape_md(p.title)} · _{len(pending)} tasks left · due {due_str}_")
             lines.append("")
 
     if not deadlines and not active_projects:
@@ -229,7 +230,7 @@ def project_list(project_repo: ProjectRepo, user_id: int) -> str:
     for p in active:
         pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]
         due_str = p.due_date.strftime('%b %d') if p.due_date else "no date"
-        lines.append(f"· *{p.title}*")
+        lines.append(f"· *{escape_md(p.title)}*")
         lines.append(f"  _{len(pending)} tasks left · due {due_str}_")
         lines.append("")
     return "\n".join(lines)
@@ -248,9 +249,9 @@ def exams_overview(task_repo: TaskRepo, user_id: int) -> str:
     lines = ["● 🔴 *Upcoming Exams*\n"]
     for e in exams:
         label = _due_label(e)
-        lines.append(f"· {e.title}{label}")
+        lines.append(f"· {escape_md(e.title)}{label}")
         if e.description:
-            lines.append(f"  _{e.description}_")
+            lines.append(f"  _{escape_md(e.description)}_")
         lines.append("")
         
     return "\n".join(lines)

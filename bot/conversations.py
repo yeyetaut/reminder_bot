@@ -23,6 +23,7 @@ from db.repository import TaskRepo, ProjectRepo
 from db.models import Task, TaskStatus
 from ai.estimator import estimate_project, format_proposal_message
 from integrations.google_calendar import create_event
+from utils.format import escape_md
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,13 @@ def _get_proposals(context: ContextTypes.DEFAULT_TYPE) -> list:
 async def start_checklist_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point: User runs /checklist."""
     user = _get_user(update, context)
+    if not user.google_credentials_encrypted:
+        await update.message.reply_text(
+            "⚠️ You need to connect your Google account first.\n\n"
+            "👉 Please run /login to continue."
+        )
+        return ConversationHandler.END
+
     _, project_repo, _, _ = _repos(context)
     unconfirmed = project_repo.list_unconfirmed(user.id)
     
@@ -72,7 +80,7 @@ async def start_checklist_flow(update: Update, context: ContextTypes.DEFAULT_TYP
 
     lines = ["📝 *Which project do you want to generate a checklist for?*"]
     for i, p in enumerate(unconfirmed):
-        lines.append(f"{i+1}. {p.title}")
+        lines.append(f"{i+1}. {escape_md(p.title)}")
     
     lines.append("\nReply with the project number or /cancel to abort.")
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
@@ -223,7 +231,7 @@ async def _notify_remaining(context: ContextTypes.DEFAULT_TYPE, chat_id: int) ->
     if not proposals:
         return
     n = len(proposals)
-    names = ", ".join(f"*{p['project_title']}*" for p in proposals)
+    names = ", ".join(f"*{escape_md(p['project_title'])}*" for p in proposals)
     await context.bot.send_message(
         chat_id=chat_id,
         text=(
@@ -255,8 +263,13 @@ def _resolve_proposal(context: ContextTypes.DEFAULT_TYPE, args) -> tuple:
 
 async def handle_callback_confirm_est(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback version of confirm_estimate."""
+    user = _get_user(update, context)
     query = update.callback_query
     await query.answer()
+
+    if not user.google_credentials_encrypted:
+        await query.answer("⚠️ You need to connect your Google account first.", show_alert=True)
+        return
     
     idx = int(query.data.split("_")[-1])
     proposals = _get_proposals(context)
@@ -296,7 +309,7 @@ async def handle_callback_confirm_est(update: Update, context: ContextTypes.DEFA
 
     # Update message to show it's confirmed
     await query.edit_message_text(
-        f"✅ *Checklist confirmed for {proposal['project_title']}*\n\n"
+        f"✅ *Checklist confirmed for {escape_md(proposal['project_title'])}*\n\n"
         f"Added {len(tasks)} tasks to your project breakdown.",
         parse_mode="Markdown"
     )
@@ -307,8 +320,13 @@ async def handle_callback_confirm_est(update: Update, context: ContextTypes.DEFA
 
 async def handle_callback_skip_est(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Callback version of skip_estimate."""
+    user = _get_user(update, context)
     query = update.callback_query
     await query.answer()
+
+    if not user.google_credentials_encrypted:
+        await query.answer("⚠️ You need to connect your Google account first.", show_alert=True)
+        return
     
     idx = int(query.data.split("_")[-1])
     proposals = _get_proposals(context)
@@ -326,7 +344,7 @@ async def handle_callback_skip_est(update: Update, context: ContextTypes.DEFAULT
     proposals.pop(idx)
 
     await query.edit_message_text(
-        f"⏭️ *Skipped planning for {proposal['project_title']}*\n\n"
+        f"⏭️ *Skipped planning for {escape_md(proposal['project_title'])}*\n\n"
         "It will still appear in your project list.",
         parse_mode="Markdown",
     )
@@ -370,7 +388,7 @@ async def confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     project_repo.confirm(user.id, project_id, 0)
 
     reply = (
-        f"✅ Checklist confirmed for *{proposal['project_title']}*\\!\n"
+        f"✅ Checklist confirmed for *{escape_md(proposal['project_title'])}*\\!\n"
         f"{len(tasks)} tasks added to your project breakdown\\."
     )
 
@@ -471,7 +489,7 @@ async def skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     _get_proposals(context).pop(idx)
 
     await update.message.reply_text(
-        f"⏭️ Skipped planning for *{proposal['project_title']}*\\. "
+        f"⏭️ Skipped planning for *{escape_md(proposal['project_title'])}*\\. "
         "It will still appear in your project list\\.",
         parse_mode="Markdown",
     )

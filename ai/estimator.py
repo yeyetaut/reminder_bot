@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any
 
 import config
 from db.models import Project
+from utils.format import escape_md
 
 logger = logging.getLogger(__name__)
 
@@ -169,14 +170,14 @@ def estimate_project(project: Project, anthropic_api_key: str | None = None, gem
 def format_proposal_message(proposal: Dict[str, Any]) -> str:
     """Format an estimation proposal as a Telegram message for user confirmation."""
     lines = [
-        f"● *Checklist for {proposal['project_title']}*",
-        f"*Strategy:* {proposal.get('reasoning', '')}",
+        f"● *Checklist for {escape_md(proposal['project_title'])}*",
+        f"*Strategy:* {escape_md(proposal.get('reasoning', ''))}",
         "",
         "*Proposed Tasks*",
     ]
     for task in proposal.get("sub_tasks", []):
-        lines.append(f"· *{task['title']}*")
-        lines.append(f"  _{task['description']}_")
+        lines.append(f"· *{escape_md(task['title'])}*")
+        lines.append(f"  _{escape_md(task['description'])}_")
         lines.append("") # Extra space
 
     lines += [

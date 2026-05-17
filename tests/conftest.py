@@ -12,8 +12,12 @@ def engine():
     engine.dispose()
 
 @pytest.fixture
-def session(engine):
-    """Provide a SQLAlchemy session (optional if using repository pattern directly)."""
-    from sqlalchemy.orm import Session
-    with Session(engine) as s:
-        yield s
+def authenticated_user(engine):
+    """Pre-register a user with mock credentials for tests that require login."""
+    from db.repository import UserRepo
+    user_repo = UserRepo(engine)
+    return user_repo.create_user(
+        telegram_id=12345,
+        chat_id=12345,
+        google_credentials_encrypted="mock_google_creds"
+    )

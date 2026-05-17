@@ -44,17 +44,17 @@ def create_mock_context(engine, args=None, user_data=None, bot_data=None):
     return context
 
 @pytest.fixture
-def unconfirmed_project(engine):
+def unconfirmed_project(engine, authenticated_user):
     repo = ProjectRepo(engine)
     return repo.save(Project(user_id=1, title="Pending Project", source="test", confirmed=False))
 
 @pytest.fixture
-def confirmed_project(engine):
+def confirmed_project(engine, authenticated_user):
     repo = ProjectRepo(engine)
     return repo.save(Project(user_id=1, title="Confirmed Project", source="test", confirmed=True))
 
 @pytest.mark.asyncio
-async def test_start_checklist_flow_no_projects(engine):
+async def test_start_checklist_flow_no_projects(engine, authenticated_user):
     update = create_mock_update()
     context = create_mock_context(engine)
     
@@ -107,7 +107,7 @@ async def test_select_project_valid(engine, unconfirmed_project):
     assert "Selected: *Pending Project*" in update.message.reply_text.call_args[0][0]
 
 @pytest.mark.asyncio
-async def test_cancel_flow(engine):
+async def test_cancel_flow(engine, authenticated_user):
     update = create_mock_update()
     context = create_mock_context(engine)
     
@@ -230,7 +230,7 @@ def pending_proposal(unconfirmed_project):
     }
 
 @pytest.mark.asyncio
-async def test_confirm_estimate_no_proposals(engine):
+async def test_confirm_estimate_no_proposals(engine, authenticated_user):
     update = create_mock_update()
     context = create_mock_context(engine, bot_data={"engine": engine, PENDING_PROPOSALS_KEY: []})
     

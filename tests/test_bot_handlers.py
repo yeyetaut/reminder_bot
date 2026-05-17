@@ -28,7 +28,7 @@ def create_mock_context(engine):
     return context
 
 @pytest.mark.asyncio
-async def test_handle_callback_done_success(engine, mocker):
+async def test_handle_callback_done_success(engine, mocker, authenticated_user):
     repo = TaskRepo(engine)
     task = repo.save(Task(user_id=1, title="Test Task", source="test", status=TaskStatus.pending))
     
@@ -46,7 +46,7 @@ async def test_handle_callback_done_success(engine, mocker):
     assert "Test Task" in kwargs["text"]
 
 @pytest.mark.asyncio
-async def test_handle_callback_done_idempotency(engine, mocker):
+async def test_handle_callback_done_idempotency(engine, mocker, authenticated_user):
     repo = TaskRepo(engine)
     task = repo.save(Task(user_id=1, title="Already Done", source="test", status=TaskStatus.done))
     
@@ -62,7 +62,7 @@ async def test_handle_callback_done_idempotency(engine, mocker):
     context.bot.send_message.assert_not_called()
 
 @pytest.mark.asyncio
-async def test_handle_callback_done_task_not_found(engine, mocker):
+async def test_handle_callback_done_task_not_found(engine, mocker, authenticated_user):
     update, query = create_mock_update(9999)
     context = create_mock_context(engine)
     
@@ -73,7 +73,7 @@ async def test_handle_callback_done_task_not_found(engine, mocker):
     context.bot.send_message.assert_not_called()
 
 @pytest.mark.asyncio
-async def test_handle_callback_done_markdown_escaping(engine, mocker):
+async def test_handle_callback_done_markdown_escaping(engine, mocker, authenticated_user):
     repo = TaskRepo(engine)
     # Title with markdown special characters
     task = repo.save(Task(user_id=1, title="Test_Task *with* `special` [chars]", source="test", status=TaskStatus.pending))
@@ -91,7 +91,7 @@ async def test_handle_callback_done_markdown_escaping(engine, mocker):
     assert expected_title in kwargs["text"]
 
 @pytest.mark.asyncio
-async def test_handle_callback_done_message_not_modified(engine, mocker):
+async def test_handle_callback_done_message_not_modified(engine, mocker, authenticated_user):
     from telegram.error import BadRequest
     repo = TaskRepo(engine)
     task = repo.save(Task(user_id=1, title="Test Task", source="test", status=TaskStatus.pending))
@@ -110,7 +110,7 @@ async def test_handle_callback_done_message_not_modified(engine, mocker):
     context.bot.send_message.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_handle_callback_done_other_edit_error(engine, mocker):
+async def test_handle_callback_done_other_edit_error(engine, mocker, authenticated_user):
     from telegram.error import BadRequest
     repo = TaskRepo(engine)
     task = repo.save(Task(user_id=1, title="Test Task", source="test", status=TaskStatus.pending))
@@ -128,7 +128,7 @@ async def test_handle_callback_done_other_edit_error(engine, mocker):
     context.bot.send_message.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_handle_callback_done_integration_with_projects(engine, mocker):
+async def test_handle_callback_done_integration_with_projects(engine, mocker, authenticated_user):
     # Test integration with both TaskRepo and ProjectRepo
     from db.repository import TaskRepo, ProjectRepo
     from db.models import Project

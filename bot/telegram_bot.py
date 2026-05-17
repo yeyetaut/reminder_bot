@@ -26,6 +26,7 @@ from ai.estimator import estimate_project
 from integrations.google_calendar import fetch_events as fetch_gcal, delete_study_events, create_deadline_event
 from integrations.gmail import fetch_emails
 from integrations.ical_feeds import fetch_canvas_events
+from utils.format import escape_md
 
 logger = logging.getLogger(__name__)
 
@@ -307,10 +308,9 @@ async def handle_callback_done(update: Update, context: ContextTypes.DEFAULT_TYP
                 logger.error(f"Failed to edit digest message: {e}")
 
         # Notify the user (escape title for Markdown)
-        safe_title = task.title.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f"✅ Marked as done: *{safe_title}*",
+            text=f"✅ Marked as done: *{escape_md(task.title)}*",
             parse_mode="Markdown"
         )
     except Exception as e:
@@ -356,10 +356,9 @@ async def handle_callback_snooze_apply(update: Update, context: ContextTypes.DEF
     except Exception as e:
         logger.error(f"Failed to edit digest message after snooze: {e}")
 
-    safe_title = task.title.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text=f"⏭️ Snoozed {days} day{'s' if days > 1 else ''}: *{safe_title}*",
+        text=f"⏭️ Snoozed {days} day{'s' if days > 1 else ''}: *{escape_md(task.title)}*",
         parse_mode="Markdown"
     )
 
@@ -413,7 +412,7 @@ async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Task not found\\. Use /today to see task numbers\\.", parse_mode="Markdown")
         return
     task_repo.mark_done(user.id, task.id)
-    await update.message.reply_text(f"✅ Done: *{task.title}*", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Done: *{escape_md(task.title)}*", parse_mode="Markdown")
 
 
 @require_login
@@ -426,7 +425,7 @@ async def cmd_snooze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     tomorrow = config.get_today() + timedelta(days=1)
     task_repo.reschedule(user.id, task.id, tomorrow)
-    await update.message.reply_text(f"⏭️ Snoozed to tomorrow: *{task.title}*", parse_mode="Markdown")
+    await update.message.reply_text(f"⏭️ Snoozed to tomorrow: *{escape_md(task.title)}*", parse_mode="Markdown")
 
 
 async def _run_sync(update, context, days_back: int, label: str, user):
@@ -583,7 +582,7 @@ async def cmd_clear_study_session(update: Update, context: ContextTypes.DEFAULT_
     cal_deleted = delete_study_events(project.title, user_credentials=google_creds)
     project_repo.reset_confirmation(user.id, project.id)
     await update.message.reply_text(
-        f"🗑️ Cleared {deleted} AI task{'s' if deleted != 1 else ''} for *{project.title}*"
+        f"🗑️ Cleared {deleted} AI task{'s' if deleted != 1 else ''} for *{escape_md(project.title)}*"
         f" and {cal_deleted} Google Calendar event{'s' if cal_deleted != 1 else ''}\\.\n"
         "Project reset to unconfirmed — run /checklist to re\\-generate breakdown\\.",
         parse_mode="Markdown",
