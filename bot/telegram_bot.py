@@ -3,6 +3,7 @@ Telegram bot — command handlers and bot startup.
 """
 import logging
 from datetime import date, timedelta
+from functools import wraps
 
 from sqlalchemy.orm import Session
 from telegram import Update
@@ -49,6 +50,22 @@ def _get_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return user
 
 
+def require_login(func):
+    """Decorator to require a user to have Google credentials set up before using a command."""
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        user = _get_user(update, context)
+        if not user.google_credentials_encrypted:
+            msg = "⚠️ You need to connect your Google account first.\n\n👉 Please run /login to continue."
+            if update.callback_query:
+                await update.callback_query.answer(msg, show_alert=True)
+            else:
+                await update.message.reply_text(msg)
+            return
+        return await func(update, context, *args, **kwargs)
+    return wrapper
+
+
 def _repos(context: ContextTypes.DEFAULT_TYPE):
     engine = context.bot_data["engine"]
     return TaskRepo(engine), ProjectRepo(engine), DailyPlanRepo(engine)
@@ -89,7 +106,7 @@ async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     from google_auth_oauthlib.flow import Flow
     import config
-    
+
     # We must use InstalledAppFlow or Web Flow. Since we have a redirect URI, we use Flow.
     try:
         flow = Flow.from_client_secrets_file(
@@ -101,7 +118,7 @@ async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             redirect_uri=f"{config.WEB_URL.rstrip('/')}/oauth2callback"
         )
-        
+
         # We pass telegram_id as state
         authorization_url, state = flow.authorization_url(
             access_type='offline',
@@ -109,11 +126,11 @@ async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt='consent',
             state=str(user.telegram_id)
         )
-        
+
         await update.message.reply_text(
-            f"🔗 *Connect your Google Account*\n\n"
-            f"[Click here to authorize]({authorization_url})",
-            parse_mode="Markdown"
+            f"🔗 <b>Connect your Google Account</b>\n\n"
+            f"<a href='{authorization_url}'>Click here to authorize</a>",
+            parse_mode="HTML"
         )
     except Exception as e:
         logger.exception(f"Error generating login URL: {e}")
@@ -127,7 +144,7 @@ async def cmd_set_anthropic_key(update: Update, context: ContextTypes.DEFAULT_TY
     key = context.args[0]
     from utils.security import encrypt_string
     encrypted = encrypt_string(key)
-    
+
     engine = context.bot_data["engine"]
     from sqlalchemy.orm import Session
     from db.models import User
@@ -135,7 +152,7 @@ async def cmd_set_anthropic_key(update: Update, context: ContextTypes.DEFAULT_TY
         db_user = s.get(User, user.id)
         db_user.anthropic_api_key_encrypted = encrypted
         s.commit()
-    
+
     await update.message.reply_text("✅ Anthropic API key saved securely.")
 
 async def cmd_set_gemini_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -146,7 +163,7 @@ async def cmd_set_gemini_key(update: Update, context: ContextTypes.DEFAULT_TYPE)
     key = context.args[0]
     from utils.security import encrypt_string
     encrypted = encrypt_string(key)
-    
+
     engine = context.bot_data["engine"]
     from sqlalchemy.orm import Session
     from db.models import User
@@ -154,7 +171,7 @@ async def cmd_set_gemini_key(update: Update, context: ContextTypes.DEFAULT_TYPE)
         db_user = s.get(User, user.id)
         db_user.gemini_api_key_encrypted = encrypted
         s.commit()
-    
+
     await update.message.reply_text("✅ Gemini API key saved securely.")
 
 
@@ -164,7 +181,7 @@ async def cmd_set_canvas_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Usage: /set_canvas_url <your_canvas_ical_url>")
         return
     url = context.args[0]
-    
+
     engine = context.bot_data["engine"]
     from sqlalchemy.orm import Session
     from db.models import User
@@ -172,11 +189,20 @@ async def cmd_set_canvas_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
         db_user = s.get(User, user.id)
         db_user.canvas_ical_url = url
         s.commit()
-    
+
     await update.message.reply_text("✅ Canvas iCal URL saved.")
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    _get_user(update, context)
+    user = _get_user(update, context)
+    if not user.google_credentials_encrypted:
+        await update.message.reply_text(
+            "👋 *Welcome to Reminder Bot!*\n\n"
+            "To get started, you need to connect your Google account so I can sync your calendar and emails.\n\n"
+            "👉 Please run /login to continue.",
+            parse_mode="Markdown"
+        )
+        return
+
     await update.message.reply_text(
         "👋 *Reminder Bot is running\\!*\n\n"
         "Commands:\n"
@@ -199,6 +225,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@require_login
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     task_repo, project_repo, _ = _repos(context)
@@ -208,7 +235,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task_count = s.scalar(select(func.count(Task.id)).where(Task.user_id == user.id))
         pending_count = s.scalar(select(func.count(Task.id)).where(Task.user_id == user.id, Task.status == TaskStatus.pending))
         proj_count = s.scalar(select(func.count(Project.id)).where(Project.user_id == user.id))
-    
+
     await update.message.reply_text(
         f"📊 *Database Status:*\n"
         f"• Total Tasks: {task_count}\n"
@@ -219,6 +246,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@require_login
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     task_repo, project_repo, _ = _repos(context)
@@ -227,6 +255,7 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=buttons)
 
 
+@require_login
 async def handle_callback_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle clicking the 'Done' button in the digest."""
     user = _get_user(update, context)
@@ -288,38 +317,40 @@ async def handle_callback_done(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.exception(f"Error in handle_callback_done: {e}")
 
 
+@require_login
 async def handle_callback_snooze_opt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show snooze options for a task."""
     query = update.callback_query
     await query.answer()
-    
+
     task_id = int(query.data.split("_")[-1])
     from bot.messages import get_snooze_options_buttons
     await query.edit_message_reply_markup(reply_markup=get_snooze_options_buttons(task_id))
 
 
+@require_login
 async def handle_callback_snooze_apply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Apply the selected snooze duration."""
     user = _get_user(update, context)
     query = update.callback_query
     await query.answer()
-    
+
     parts = query.data.split("_")
     task_id = int(parts[2])
     days = int(parts[3])
-    
+
     task_repo, project_repo, _ = _repos(context)
     task = task_repo.get_by_id(user.id, task_id)
     if not task:
         return
-        
+
     new_date = config.get_today() + timedelta(days=days)
     task_repo.reschedule(user.id, task.id, new_date)
-    
+
     # Update the digest message
     new_text = morning_digest(task_repo, project_repo, user.id)
     new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id)
-    
+
     try:
         await query.edit_message_text(new_text, parse_mode="Markdown", reply_markup=new_buttons)
     except Exception as e:
@@ -333,40 +364,47 @@ async def handle_callback_snooze_apply(update: Update, context: ContextTypes.DEF
     )
 
 
+@require_login
 async def handle_callback_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Go back to the main digest buttons."""
     user = _get_user(update, context)
     query = update.callback_query
     await query.answer()
-    
+
     task_repo, project_repo, _ = _repos(context)
     new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id)
     await query.edit_message_reply_markup(reply_markup=new_buttons)
 
+
+@require_login
 async def cmd_projects(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     _, project_repo, _ = _repos(context)
     await update.message.reply_text(project_list(project_repo, user.id), parse_mode="Markdown")
 
 
+@require_login
 async def cmd_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     task_repo, project_repo, _ = _repos(context)
     await update.message.reply_text(weekly_overview(task_repo, project_repo, user.id), parse_mode="Markdown")
 
 
+@require_login
 async def cmd_monthly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     task_repo, project_repo, _ = _repos(context)
     await update.message.reply_text(monthly_overview(task_repo, project_repo, user.id), parse_mode="Markdown")
 
 
+@require_login
 async def cmd_exams(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     task_repo, _, _ = _repos(context)
     await update.message.reply_text(exams_overview(task_repo, user.id), parse_mode="Markdown")
 
 
+@require_login
 async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     task_repo, _, _ = _repos(context)
@@ -378,6 +416,7 @@ async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Done: *{task.title}*", parse_mode="Markdown")
 
 
+@require_login
 async def cmd_snooze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     task_repo, _, _ = _repos(context)
@@ -391,6 +430,7 @@ async def cmd_snooze(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _run_sync(update, context, days_back: int, label: str, user):
+
     """Shared sync logic. days_back controls Gmail lookback window."""
     from db.repository import ProcessedSourceRepo
     engine = context.bot_data["engine"]
@@ -479,12 +519,14 @@ async def _run_sync(update, context, days_back: int, label: str, user):
         )
 
 
+@require_login
 async def cmd_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Light daily sync — only today's emails \\+ calendar."""
     user = _get_user(update, context)
     await _run_sync(update, context, days_back=1, label="Syncing today's emails\\.\\.\\.", user=user)
 
 
+@require_login
 async def cmd_total_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Full sync — 14 days of emails \\+ 30 days calendar, plus backfill all Canvas tasks to Google Calendar."""
     task_repo, _, _ = _repos(context)
@@ -510,6 +552,7 @@ async def cmd_total_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+@require_login
 async def cmd_clear_study_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     """Delete study sessions for a specific project by its list index (/projects numbering)."""
@@ -547,6 +590,7 @@ async def cmd_clear_study_session(update: Update, context: ContextTypes.DEFAULT_
     )
 
 
+@require_login
 async def cmd_clear_all_study_sessions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     """Delete all AI-generated tasks across every project."""
@@ -566,14 +610,17 @@ async def cmd_clear_all_study_sessions(update: Update, context: ContextTypes.DEF
     )
 
 
+@require_login
 async def cmd_confirm_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await confirm_estimate(update, context)
 
 
+@require_login
 async def cmd_adjust_hours(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await adjust_hours(update, context)
 
 
+@require_login
 async def cmd_skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await skip_estimate(update, context)
 
