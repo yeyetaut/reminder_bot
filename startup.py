@@ -23,6 +23,6 @@ def prepare_google_credentials():
         logger.info("Wrote credentials.json from GOOGLE_CREDENTIALS_B64")
 
     if token_b64:
-        with open(config.GOOGLE_TOKEN_FILE, "w") as f:
-            f.write(base64.b64decode(token_b64).decode("utf-8"))
+        with open(config.GOOGLE_TOKEN_FILE, "wb") as f:
+            f.write(base64.b64decode(token_b64))
         logger.info("Wrote token.json from GOOGLE_TOKEN_B64")
