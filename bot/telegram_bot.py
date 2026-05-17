@@ -218,11 +218,32 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/monthly — Monthly calendar\n\n"
         "<b>Settings:</b>\n"
         "/login — Connect your Google account\n"
+        "/help — Setup instructions & FAQ\n"
         "/set_canvas_url &lt;url&gt; — Link your Canvas iCal feed\n"
         "/set_anthropic_key &lt;key&gt; — Set your Claude API key\n"
         "/set_gemini_key &lt;key&gt; — Set your Gemini API key",
         parse_mode="HTML",
     )
+
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "🛠️ <b>Reminder Bot Setup Guide</b>\n\n"
+        "<b>1. Gmail &amp; Google Calendar</b>\n"
+        "Run /login to connect your Google account. This allows the bot to read your emails for deadlines and sync them to your calendar.\n\n"
+        "<b>2. Outlook (School/Work Email)</b>\n"
+        "Since university security blocks direct access, the easiest way to sync Outlook is via forwarding:\n"
+        "• Open Outlook Web > Settings > Mail > Forwarding.\n"
+        "• Forward to your connected Gmail address.\n"
+        "• The bot will now read your Outlook deadlines through Gmail!\n\n"
+        "<b>3. Canvas / Blackboard / Moodle (iCal)</b>\n"
+        "You can sync your classes directly by providing a calendar feed URL:\n"
+        "• <b>Canvas:</b> Calendar > Calendar Feed (bottom right).\n"
+        "• <b>Blackboard:</b> Calendar > Get External Calendar Link.\n"
+        "• Once you have the link (ends in .ics), run:\n"
+        "  <code>/set_canvas_url &lt;your_url&gt;</code>"
+    )
+    await update.message.reply_text(help_text, parse_mode="HTML")
 
 
 @require_login
@@ -660,6 +681,7 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.bot_data["engine"] = engine
 
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("projects", cmd_projects))
     app.add_handler(CommandHandler("weekly", cmd_weekly))
