@@ -29,6 +29,10 @@ GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 GOOGLE_CREDENTIALS_FILE: str = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
 GOOGLE_TOKEN_FILE: str = os.getenv("GOOGLE_TOKEN_FILE", "token.json")
 
+# Microsoft
+MICROSOFT_CLIENT_ID: str = os.getenv("MICROSOFT_CLIENT_ID", "")
+MICROSOFT_CLIENT_SECRET: str = os.getenv("MICROSOFT_CLIENT_SECRET", "")
+
 # LMS iCal feeds
 CANVAS_ICAL_URL: str = os.getenv("CANVAS_ICAL_URL", "")
 
