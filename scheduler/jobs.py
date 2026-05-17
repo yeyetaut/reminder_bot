@@ -125,7 +125,6 @@ async def job_auto_sync(bot, engine):
     from integrations.google_calendar import fetch_events as fetch_gcal, create_deadline_event, find_event_by_title
     from integrations.gmail import fetch_emails
     from integrations.ical_feeds import fetch_canvas_events
-    from integrations.outlook import fetch_outlook_emails
     from ai.extractor import extract_and_save
     from telegram.ext import ContextTypes
     from utils.security import decrypt_json, decrypt_string
@@ -134,16 +133,12 @@ async def job_auto_sync(bot, engine):
         user_repo = UserRepo(engine)
         for user in user_repo.get_all_users():
             google_creds = decrypt_json(user.google_credentials_encrypted) if user.google_credentials_encrypted else None
-            ms_creds = decrypt_json(user.microsoft_credentials_encrypted) if user.microsoft_credentials_encrypted else None
             anthropic_key = decrypt_string(user.anthropic_api_key_encrypted) if user.anthropic_api_key_encrypted else None
             gemini_key = decrypt_string(user.gemini_api_key_encrypted) if user.gemini_api_key_encrypted else None
 
             gcal = fetch_gcal(days_ahead=30, user_credentials=google_creds)
-            gmail_emails, _ = fetch_emails(max_results=30, days_back=1, user_credentials=google_creds)
-            outlook_emails, _ = fetch_outlook_emails(max_results=30, days_back=1, token_data=ms_creds)
+            emails, _ = fetch_emails(max_results=30, days_back=1, user_credentials=google_creds)
             canvas = fetch_canvas_events(canvas_url=user.canvas_ical_url)
-            
-            all_emails = gmail_emails + outlook_emails
 
             task_repo = TaskRepo(engine)
             project_repo = ProjectRepo(engine)
@@ -151,7 +146,7 @@ async def job_auto_sync(bot, engine):
 
             new_tasks, new_projects, _ = extract_and_save(
                 calendar_events=gcal + canvas,
-                emails=all_emails,
+                emails=emails,
                 task_repo=task_repo,
                 project_repo=project_repo,
                 processed_repo=processed_repo,

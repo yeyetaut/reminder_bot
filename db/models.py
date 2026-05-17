@@ -30,7 +30,6 @@ class User(Base):
     
     # Encrypted fields
     google_credentials_encrypted: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    microsoft_credentials_encrypted: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     anthropic_api_key_encrypted: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     gemini_api_key_encrypted: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     

@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, select
 from sqlalchemy.exc import ProgrammingError, InternalError, OperationalError
 from google_auth_oauthlib.flow import Flow
-from integrations.outlook_auth import acquire_ms_token
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -88,57 +87,9 @@ async def oauth2callback(request):
         return web.Response(text=f"An error occurred: {e}", status=500)
 
 
-async def oauth2callback_ms(request):
-    """Handle Microsoft OAuth2 callback."""
-    code = request.query.get('code')
-    state = request.query.get('state')  # This is the telegram_id
-    
-    if not code or not state:
-        return web.Response(text="Missing code or state.", status=400)
-    
-    try:
-        telegram_id = int(state)
-    except ValueError:
-        return web.Response(text="Invalid state parameter.", status=400)
-
-    engine = request.app['engine']
-    bot = request.app['bot']
-
-    try:
-        token_data = acquire_ms_token(code)
-        if not token_data:
-            return web.Response(text="Failed to acquire Microsoft token.", status=500)
-            
-        encrypted_creds = encrypt_json(token_data)
-        
-        with Session(engine) as session:
-            user = session.scalar(select(User).where(User.telegram_id == telegram_id))
-            if user:
-                user.microsoft_credentials_encrypted = encrypted_creds
-                session.commit()
-                logger.info(f"Successfully saved Microsoft credentials for user {telegram_id}")
-                
-                try:
-                    asyncio.create_task(bot.send_message(
-                        chat_id=user.telegram_chat_id,
-                        text="✅ Outlook Account linked successfully! The bot will now sync your Microsoft emails."
-                    ))
-                except Exception as e:
-                    logger.warning(f"Could not send success message to user {telegram_id}: {e}")
-                    
-                return web.Response(text="Success! Your Outlook account has been connected. You can close this window.", content_type='text/html')
-            else:
-                return web.Response(text="User not found in database.", status=404)
-
-    except Exception as e:
-        logger.exception(f"Error in oauth2callback_ms: {e}")
-        return web.Response(text=f"An error occurred: {e}", status=500)
-
-
 async def start_web_server(application):
     app = web.Application()
     app.router.add_get('/oauth2callback', oauth2callback)
-    app.router.add_get('/oauth2callback_ms', oauth2callback_ms)
     app['engine'] = application.bot_data['engine']
     app['bot'] = application.bot
     
@@ -184,7 +135,6 @@ def _migrate(engine):
         "ALTER TABLE projects ADD COLUMN user_id INTEGER REFERENCES users(id)",
         "ALTER TABLE processed_sources ADD COLUMN user_id INTEGER REFERENCES users(id)",
         "ALTER TABLE daily_plans ADD COLUMN user_id INTEGER REFERENCES users(id)",
-        "ALTER TABLE users ADD COLUMN microsoft_credentials_encrypted VARCHAR",
     ]
 
     for stmt in stmts:

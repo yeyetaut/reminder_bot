@@ -26,8 +26,6 @@ from ai.estimator import estimate_project
 from integrations.google_calendar import fetch_events as fetch_gcal, delete_study_events, create_deadline_event
 from integrations.gmail import fetch_emails
 from integrations.ical_feeds import fetch_canvas_events
-from integrations.outlook import fetch_outlook_emails
-from integrations.outlook_auth import get_ms_auth_url
 from utils.format import escape_md
 
 logger = logging.getLogger(__name__)
@@ -140,25 +138,8 @@ async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Error starting login process: {e}")
 
 
-async def cmd_login_outlook(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate and send the Microsoft authorization URL."""
-    user = _get_user(update, context)
-    if not config.MICROSOFT_CLIENT_ID:
-        await update.message.reply_text("⚠️ Microsoft integration is not configured on the server.")
-        return
-        
-    try:
-        auth_url = get_ms_auth_url(user.telegram_id)
-        await update.message.reply_text(
-            f"🔗 <b>Connect your Outlook Account</b>\n\n"
-            f"<a href='{auth_url}'>Click here to authorize with Microsoft</a>",
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.exception(f"Error generating Outlook login URL: {e}")
-        await update.message.reply_text(f"⚠️ Error starting Outlook login: {e}")
-
 async def cmd_set_anthropic_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     user = _get_user(update, context)
     if not context.args:
         await update.message.reply_text("Usage: /set_anthropic_key <your_api_key>")
@@ -237,7 +218,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/monthly — Monthly calendar\n\n"
         "<b>Settings:</b>\n"
         "/login — Connect your Google account\n"
-        "/login_outlook — Connect your Outlook account\n"
         "/set_canvas_url &lt;url&gt; — Link your Canvas iCal feed\n"
         "/set_anthropic_key &lt;key&gt; — Set your Claude API key\n"
         "/set_gemini_key &lt;key&gt; — Set your Gemini API key",
@@ -458,21 +438,17 @@ async def _run_sync(update, context, days_back: int, label: str, user):
 
     from utils.security import decrypt_json, decrypt_string
     google_creds = decrypt_json(user.google_credentials_encrypted) if user.google_credentials_encrypted else None
-    ms_creds = decrypt_json(user.microsoft_credentials_encrypted) if user.microsoft_credentials_encrypted else None
 
     gcal = fetch_gcal(days_ahead=30, user_credentials=google_creds)
-    gmail_emails, _ = fetch_emails(max_results=30, days_back=days_back, user_credentials=google_creds)
-    outlook_emails, _ = fetch_outlook_emails(max_results=30, days_back=days_back, token_data=ms_creds)
+    emails, gmail_error = fetch_emails(max_results=30, days_back=days_back, user_credentials=google_creds)
     canvas = fetch_canvas_events(canvas_url=user.canvas_ical_url)
-
-    all_emails = gmail_emails + outlook_emails
 
     anthropic_key = decrypt_string(user.anthropic_api_key_encrypted) if user.anthropic_api_key_encrypted else None
     gemini_key = decrypt_string(user.gemini_api_key_encrypted) if user.gemini_api_key_encrypted else None
 
     new_tasks, new_projects, ai_error = extract_and_save(
         calendar_events=gcal + canvas,
-        emails=all_emails,
+        emails=emails,
         task_repo=task_repo,
         project_repo=project_repo,
         processed_repo=processed_repo,
@@ -666,7 +642,6 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("exams", cmd_exams))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("login", cmd_login))
-    app.add_handler(CommandHandler("login_outlook", cmd_login_outlook))
     app.add_handler(CommandHandler("set_anthropic_key", cmd_set_anthropic_key))
     app.add_handler(CommandHandler("set_gemini_key", cmd_set_gemini_key))
     app.add_handler(CommandHandler("set_canvas_url", cmd_set_canvas_url))
