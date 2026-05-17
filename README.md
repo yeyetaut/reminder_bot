@@ -1,138 +1,99 @@
 # Reminder Bot
 
-A personal productivity bot that aggregates deadlines from Google Calendar, Gmail, and Canvas, uses Claude AI to extract and break down tasks, and delivers structured digests via Telegram.
+A multi-user personal productivity bot that aggregates deadlines from Google Calendar, Gmail, and Canvas, uses Claude AI to extract and break down tasks, and delivers structured digests via Telegram.
 
-## Features
+## 🚀 Features
 
-- **Multi-source sync** — Google Calendar, Gmail (deadline-related emails), and Canvas iCal feed
-- **AI task extraction** — Claude Haiku reads raw events/emails and extracts structured tasks, deduplicating by source ID
-- **Project estimation** — Claude Sonnet estimates total hours for large projects and proposes a daily work schedule
-- **Telegram commands** — `/today`, `/projects`, `/sync`, `/done`, `/snooze`, `/weekly`, `/monthly`
-- **Scheduled digests** — morning task list (7:30 AM), evening recap (9:00 PM), weekly overview (Friday 9:00 PM), monthly overview (last day of month 9:30 PM)
-- **Google Calendar write-back** — confirmed daily work sessions are created as calendar events
+- **Multi-Source Sync** — Automatically pulls deadlines from Google Calendar, Gmail (AI-extracted from emails), and Canvas iCal feeds.
+- **AI Task Extraction** — Uses Claude Haiku to parse complex emails into actionable tasks, avoiding duplicates and filtering out overdue items.
+- **Interactive UI** — Manage your day directly from Telegram with "Done" and "Snooze" buttons. No more typing manual command numbers.
+- **AI Project Checklists** — Generate deep breakdowns for major projects by uploading rubrics or notes. Confirm or skip tasks with interactive buttons.
+- **Privacy & Security** — Supports multiple users with isolated data. All personal API keys and Google tokens are stored using high-grade encryption.
+- **Google Calendar Sync** — Automatically writes newly discovered deadlines back to your Google Calendar as all-day events.
+- **Scheduled Digests** — Stay on track with automated morning lists (7:30 AM) and evening recaps (9:00 PM).
 
-## Project Structure
+## 🛠 Project Structure
 
 ```
-main.py                    # Entry point
-config.py                  # Env var loading
-startup.py                 # Decodes base64 Google credentials at startup (Railway)
-integrations/
-  google_auth.py           # Shared OAuth2 token (Calendar + Gmail)
-  google_calendar.py       # Read events + create_event()
-  gmail.py                 # Read deadline-related emails
-  ical_feeds.py            # Canvas iCal feed parser
+main.py                    # Entry point & Web server for OAuth callbacks
+config.py                  # Environment configuration
+startup.py                 # Intelligent credential handling (Base64 or Raw JSON)
 ai/
-  extractor.py             # Haiku: raw events → structured tasks → DB
-  estimator.py             # Sonnet: project → estimated hours + daily sessions
+  extractor.py             # Haiku: Converts emails/events → structured tasks
+  estimator.py             # Sonnet: Project → actionable sub-task checklists
 db/
-  models.py                # SQLAlchemy models: Project, Task, DailyPlan
-  repository.py            # CRUD helpers
+  models.py                # Database schema (Multi-user, Encrypted)
+  repository.py            # CRUD logic and data isolation
 bot/
-  telegram_bot.py          # Command handlers
-  messages.py              # Digest formatters
-  conversations.py         # Estimate confirmation flow
-scheduler/
-  jobs.py                  # APScheduler cron jobs
+  telegram_bot.py          # Command & Callback handlers
+  messages.py              # Clean HTML-formatted digest templates
+  conversations.py         # AI checklist generation flow
+integrations/
+  google_calendar.py       # Calendar Read/Write logic
+  gmail.py                 # Actionable email fetching
+  ical_feeds.py            # Canvas/Blackboard feed parsing
+utils/
+  security.py              # Fernet encryption for user tokens
+  format.py                # Robust Markdown escaping
 ```
 
-## Setup
+## 📦 Setup & Deployment
 
-### 1. Clone and install dependencies
+### 1. Local Installation
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/yeyetaut/reminder_bot.git
 cd reminder_bot
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Credentials
+### 2. Configuration (`.env`)
 
-Copy `.env.example` to `.env` and fill in the values:
+Create a `.env` file based on `.env.example`. Required variables:
 
-```bash
-cp .env.example .env
-```
-
-| Variable | How to get it |
+| Variable | Description |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | Create a bot via [@BotFather](https://t.me/BotFather) on Telegram |
-| `TELEGRAM_CHAT_ID` | Send a message to your bot, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` |
-| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
-| `GOOGLE_CREDENTIALS_FILE` | Google Cloud Console → enable Gmail + Calendar APIs → OAuth 2.0 → download `credentials.json` |
-| `CANVAS_ICAL_URL` | Canvas → Account → Calendar → "Calendar Feed" → copy URL |
-| `TIMEZONE` | e.g. `Asia/Singapore`, `America/New_York` |
+| `TELEGRAM_BOT_TOKEN` | From [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_CHAT_ID` | Your Telegram ID (for admin/logs) |
+| `ENCRYPTION_KEY` | Generate with: `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `WEB_URL` | Your Railway or local URL (e.g., `https://bot.up.railway.app`) |
+| `ANTHROPIC_API_KEY` | Primary AI for extraction and estimation |
 
-#### Google OAuth setup
+### 3. Railway Deployment
 
-On first run, a browser window will open to authorize Google access. This generates `token.json` which covers both Gmail and Google Calendar.
+This bot is optimized for [Railway](https://railway.com).
 
-```bash
-python main.py
-```
+1.  **Generate Domain:** Enable "Public Networking" in Railway settings and set your `WEB_URL`.
+2.  **Add Variables:** Mirror your `.env` variables into the Railway dashboard.
+3.  **Google Credentials:** Paste your `credentials.json` content (either raw JSON or Base64 encoded) into the `GOOGLE_CREDENTIALS_B64` variable. The bot will automatically detect the format.
+4.  **Database:** Provision a PostgreSQL instance in your Railway project. The bot will handle migrations automatically on startup.
 
-### 3. Run locally
+## 🤖 Usage
 
-```bash
-python main.py
-```
+### Onboarding
+1.  Run `/start` to see the menu.
+2.  Run `/login` to connect your Google account.
+3.  Run `/help` for a step-by-step guide on connecting Outlook and Canvas.
 
-## Railway Deployment
+### Core Commands
+- `/today` — View today's tasks and deadlines with interactive buttons.
+- `/checklist` — Upload a PDF or notes to generate a task breakdown for a project.
+- `/projects` — Overview of all active projects and their completion status.
+- `/exams` — Quick list of upcoming exams.
+- `/weekly` / `/monthly` — Longer-term recaps.
 
-The bot is designed for [Railway](https://railway.com) deployment.
+## 🕒 Automated Schedule
 
-### Environment variables (Railway)
-
-Set all variables from `.env` in Railway → your service → **Variables**. Additionally:
-
-| Variable | Value |
+| Event | Time |
 |---|---|
-| `GOOGLE_CREDENTIALS_B64` | `base64 -i credentials.json` |
-| `GOOGLE_TOKEN_B64` | `base64 -i token.json` (generate locally first) |
+| **Daily Sync** | 7:00 AM |
+| **Morning Digest** | 7:30 AM |
+| **Evening Recap** | 9:00 PM |
+| **Weekly Summary** | Friday 9:00 PM |
+| **Monthly Recap** | Last day of month 9:30 PM |
+| **Cleanup** | Daily 3:00 AM (Prunes old tasks) |
 
-**Encoding the files:**
-
-```bash
-# macOS
-base64 -i credentials.json | tr -d '\n'
-base64 -i token.json | tr -d '\n'
-```
-
-Paste each output (starting with `eyJ...`) as the corresponding Railway variable. At startup, `startup.py` decodes these back into files before the bot initializes.
-
-### Re-deploying after token refresh
-
-If the Google token expires and auto-refresh fails, re-run the OAuth flow locally and re-encode `token.json`:
-
-```bash
-python main.py   # triggers re-auth if token is invalid
-base64 -i token.json | tr -d '\n'
-# paste output into GOOGLE_TOKEN_B64 in Railway
-```
-
-## Telegram Commands
-
-| Command | Description |
-|---|---|
-| `/start` | Show command list |
-| `/today` | Today's tasks ordered by deadline |
-| `/projects` | Active projects with completion status |
-| `/sync` | Manually re-fetch from all sources |
-| `/done <number or title>` | Mark a task complete |
-| `/snooze <number or title>` | Push a task to tomorrow |
-| `/weekly` | This week's overview |
-| `/monthly` | This month's recap |
-
-## Scheduled Jobs
-
-| Job | Time |
-|---|---|
-| Auto-sync | Daily 7:00 AM |
-| Morning digest | Daily 7:30 AM |
-| Evening recap | Daily 9:00 PM |
-| Weekly overview | Friday 9:00 PM |
-| Monthly overview | Last day of month, 9:30 PM |
-
-All times use the `TIMEZONE` environment variable.
+## ⚖️ License
+MIT
