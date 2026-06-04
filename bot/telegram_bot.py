@@ -874,7 +874,6 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     # Handle 'Done' buttons
     from telegram.ext import CallbackQueryHandler
     from bot.conversations import handle_callback_confirm_est, handle_callback_skip_est
-    app.add_handler(CallbackQueryHandler(handle_callback_quick_add_habit, pattern="^quick_add_habit$"))
     app.add_handler(CallbackQueryHandler(handle_callback_quick_habits, pattern="^quick_habits$"))
     app.add_handler(CallbackQueryHandler(handle_callback_quick_today, pattern="^quick_today$"))
     app.add_handler(CallbackQueryHandler(handle_callback_log_habit, pattern="^log_habit_"))

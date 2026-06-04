@@ -55,7 +55,12 @@ def _get_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_add_habit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.pop(DRAFT_KEY, None)
-    await update.message.reply_text("What habit do you want to track? (e.g. 'Meditate 10 minutes')")
+    msg = "What habit do you want to track? (e.g. 'Meditate 10 minutes')"
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(msg)
+    else:
+        await update.message.reply_text(msg)
     return ASKING_TITLE
 
 
@@ -141,7 +146,10 @@ async def cancel_habit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 def build_add_habit_conversation() -> ConversationHandler:
     return ConversationHandler(
-        entry_points=[CommandHandler("add_habit", start_add_habit)],
+        entry_points=[
+            CommandHandler("add_habit", start_add_habit),
+            CallbackQueryHandler(start_add_habit, pattern="^quick_add_habit$"),
+        ],
         states={
             ASKING_TITLE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title),
