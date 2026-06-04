@@ -16,11 +16,12 @@ from telegram.ext import (
 )
 
 import config
-from db.repository import TaskRepo, ProjectRepo, DailyPlanRepo
+from db.repository import TaskRepo, ProjectRepo, DailyPlanRepo, HabitRepo
 from db.models import TaskStatus
 from bot.messages import (
     morning_digest, evening_recap, weekly_overview, monthly_overview,
-    project_list, exams_overview, get_morning_digest_buttons
+    project_list, exams_overview, get_morning_digest_buttons,
+    habits_section, get_habit_log_buttons,
 )
 from bot.conversations import send_proposal, confirm_estimate, adjust_hours, skip_estimate
 from ai.extractor import extract_and_save
@@ -72,6 +73,10 @@ def require_login(func):
 def _repos(context: ContextTypes.DEFAULT_TYPE):
     engine = context.bot_data["engine"]
     return TaskRepo(engine), ProjectRepo(engine), DailyPlanRepo(engine)
+
+
+def _habit_repo(context: ContextTypes.DEFAULT_TYPE) -> HabitRepo:
+    return HabitRepo(context.bot_data["engine"])
 
 
 def _parse_task_ref(args, task_repo: TaskRepo, user_id: int):
@@ -215,6 +220,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/projects — Active projects overview\n"
         "/checklist — Generate an AI checklist for a project\n"
         "/exams — Upcoming exams\n\n"
+        "<b>Habits:</b>\n"
+        "/habits — View all habits & progress\n"
+        "/add_habit — Add a daily, weekly, or monthly habit\n"
+        "/log_habit &lt;id&gt; — Log one completion\n"
+        "/delete_habit &lt;id&gt; — Remove a habit\n\n"
         "<b>Overviews:</b>\n"
         "/weekly — Weekly summary\n"
         "/monthly — Monthly calendar\n\n"
@@ -295,8 +305,9 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = _get_user(update, context)
     task_repo, project_repo, _ = _repos(context)
-    text = morning_digest(task_repo, project_repo, user.id)
-    buttons = get_morning_digest_buttons(task_repo, project_repo, user.id)
+    hr = _habit_repo(context)
+    text = morning_digest(task_repo, project_repo, user.id, habit_repo=hr)
+    buttons = get_morning_digest_buttons(task_repo, project_repo, user.id, habit_repo=hr)
     await update.message.reply_text(text, parse_mode="Markdown", reply_markup=buttons)
 
 
@@ -319,9 +330,9 @@ async def handle_callback_done(update: Update, context: ContextTypes.DEFAULT_TYP
         task = task_repo.get_by_id(user.id, task_id)
         if not task:
             logger.warning(f"Task {task_id} not found for callback")
-            # Just remove the buttons if task is gone
-            new_text = morning_digest(task_repo, project_repo, user.id)
-            new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id)
+            hr = _habit_repo(context)
+            new_text = morning_digest(task_repo, project_repo, user.id, habit_repo=hr)
+            new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id, habit_repo=hr)
             try:
                 await query.edit_message_text(new_text, parse_mode="Markdown", reply_markup=new_buttons)
             except Exception as e:
@@ -334,9 +345,9 @@ async def handle_callback_done(update: Update, context: ContextTypes.DEFAULT_TYP
         task_repo.mark_done(user.id, task_id)
         logger.info(f"Task {task_id} ('{task.title}') marked as done via callback")
 
-        # Update the digest message (remove the button for this task)
-        new_text = morning_digest(task_repo, project_repo, user.id)
-        new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id)
+        hr = _habit_repo(context)
+        new_text = morning_digest(task_repo, project_repo, user.id, habit_repo=hr)
+        new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id, habit_repo=hr)
 
         try:
             await query.edit_message_text(
@@ -391,9 +402,9 @@ async def handle_callback_snooze_apply(update: Update, context: ContextTypes.DEF
     new_date = config.get_today() + timedelta(days=days)
     task_repo.reschedule(user.id, task.id, new_date)
 
-    # Update the digest message
-    new_text = morning_digest(task_repo, project_repo, user.id)
-    new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id)
+    hr = _habit_repo(context)
+    new_text = morning_digest(task_repo, project_repo, user.id, habit_repo=hr)
+    new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id, habit_repo=hr)
 
     try:
         await query.edit_message_text(new_text, parse_mode="Markdown", reply_markup=new_buttons)
@@ -415,7 +426,8 @@ async def handle_callback_back(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
 
     task_repo, project_repo, _ = _repos(context)
-    new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id)
+    hr = _habit_repo(context)
+    new_buttons = get_morning_digest_buttons(task_repo, project_repo, user.id, habit_repo=hr)
     await query.edit_message_reply_markup(reply_markup=new_buttons)
 
 
@@ -680,6 +692,89 @@ async def cmd_skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await skip_estimate(update, context)
 
 
+@require_login
+async def cmd_habits(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show all active habits with their current period progress and Log buttons."""
+    from telegram import InlineKeyboardMarkup
+    user = _get_user(update, context)
+    hr = _habit_repo(context)
+    section = habits_section(hr, user.id)
+    if not section:
+        await update.message.reply_text("You have no active habits yet\\. Use /add\\_habit to add one\\.", parse_mode="Markdown")
+        return
+    rows = get_habit_log_buttons(hr, user.id)
+    markup = InlineKeyboardMarkup(rows) if rows else None
+    await update.message.reply_text(section, parse_mode="Markdown", reply_markup=markup)
+
+
+@require_login
+async def cmd_log_habit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/log_habit <id> — log one completion for the given habit."""
+    user = _get_user(update, context)
+    hr = _habit_repo(context)
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("Usage: /log\\_habit <id>  \\(use /habits to see IDs\\)", parse_mode="Markdown")
+        return
+    habit_id = int(context.args[0])
+    habit = hr.get_by_id(user.id, habit_id)
+    if not habit:
+        await update.message.reply_text("Habit not found\\.", parse_mode="Markdown")
+        return
+    hr.log_completion(user.id, habit_id)
+    count = hr.completions_this_period(user.id, habit_id, habit.frequency)
+    from bot.messages import _period_label
+    period = _period_label(habit.frequency)
+    if count >= habit.target_count:
+        status = "✅ done"
+    else:
+        status = f"{count}/{habit.target_count} {period}"
+    await update.message.reply_text(
+        f"📝 Logged: *{escape_md(habit.title)}* — {status}", parse_mode="Markdown"
+    )
+
+
+@require_login
+async def cmd_delete_habit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/delete_habit <id> — deactivate a habit."""
+    user = _get_user(update, context)
+    hr = _habit_repo(context)
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("Usage: /delete\\_habit <id>  \\(use /habits to see IDs\\)", parse_mode="Markdown")
+        return
+    habit_id = int(context.args[0])
+    habit = hr.get_by_id(user.id, habit_id)
+    if not habit:
+        await update.message.reply_text("Habit not found\\.", parse_mode="Markdown")
+        return
+    hr.deactivate(user.id, habit_id)
+    await update.message.reply_text(f"🗑️ Deleted habit: *{escape_md(habit.title)}*", parse_mode="Markdown")
+
+
+@require_login
+async def handle_callback_log_habit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Log a habit completion from an inline button."""
+    from telegram import InlineKeyboardMarkup
+    user = _get_user(update, context)
+    query = update.callback_query
+    await query.answer()
+    habit_id = int(query.data.split("_")[2])
+    hr = _habit_repo(context)
+    habit = hr.get_by_id(user.id, habit_id)
+    if not habit:
+        return
+    hr.log_completion(user.id, habit_id)
+    # Re-render the habits message in-place
+    from bot.messages import _period_label, habits_section, get_habit_log_buttons
+    section = habits_section(hr, user.id)
+    rows = get_habit_log_buttons(hr, user.id)
+    markup = InlineKeyboardMarkup(rows) if rows else None
+    try:
+        await query.edit_message_text(section, parse_mode="Markdown", reply_markup=markup)
+    except Exception as e:
+        if "Message is not modified" not in str(e):
+            logger.error(f"Failed to edit habits message: {e}")
+
+
 # ── Bot builder ───────────────────────────────────────────────────────────────
 
 def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
@@ -712,10 +807,15 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CommandHandler("confirm_estimate", cmd_confirm_estimate))
     app.add_handler(CommandHandler("adjust_hours", cmd_adjust_hours))
     app.add_handler(CommandHandler("skip_estimate", cmd_skip_estimate))
+
+    app.add_handler(CommandHandler("habits", cmd_habits))
+    app.add_handler(CommandHandler("log_habit", cmd_log_habit))
+    app.add_handler(CommandHandler("delete_habit", cmd_delete_habit))
     
     # Handle 'Done' buttons
     from telegram.ext import CallbackQueryHandler
     from bot.conversations import handle_callback_confirm_est, handle_callback_skip_est
+    app.add_handler(CallbackQueryHandler(handle_callback_log_habit, pattern="^log_habit_"))
     app.add_handler(CallbackQueryHandler(handle_callback_done, pattern="^done_"))
     app.add_handler(CallbackQueryHandler(handle_callback_snooze_opt, pattern="^snooze_opt_"))
     app.add_handler(CallbackQueryHandler(handle_callback_snooze_apply, pattern="^snooze_apply_"))
@@ -723,9 +823,11 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     app.add_handler(CallbackQueryHandler(handle_callback_confirm_est, pattern="^confirm_est_"))
     app.add_handler(CallbackQueryHandler(handle_callback_skip_est, pattern="^skip_est_"))
     
-    # Register conversation handler AFTER explicit commands to ensure / commands have priority.
+    # Register conversation handlers AFTER explicit commands to ensure / commands have priority.
     from bot.conversations import build_estimate_conversation
+    from bot.habit_conversations import build_add_habit_conversation
     app.add_handler(build_estimate_conversation())
+    app.add_handler(build_add_habit_conversation())
 
     # Catch-all for unknown commands
     app.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))

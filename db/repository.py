@@ -4,7 +4,7 @@ from sqlalchemy import Engine, select, update, delete
 from sqlalchemy.orm import Session
 
 import config
-from db.models import Project, Task, TaskStatus, DailyPlan, ProcessedSource, User
+from db.models import Project, Task, TaskStatus, DailyPlan, ProcessedSource, User, Habit, HabitLog, HabitFrequency
 
 
 class UserRepo:
@@ -286,6 +286,66 @@ class ProcessedSourceRepo:
     def save_many(self, user_id: int, source_ids: List[str]) -> None:
         with Session(self.engine) as s:
             s.add_all([ProcessedSource(user_id=user_id, source_id=sid) for sid in source_ids])
+            s.commit()
+
+
+class HabitRepo:
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
+    def create(self, user_id: int, title: str, frequency: HabitFrequency,
+               target_count: int = 1, description: Optional[str] = None) -> Habit:
+        with Session(self.engine) as s:
+            habit = Habit(user_id=user_id, title=title, frequency=frequency,
+                          target_count=target_count, description=description)
+            s.add(habit)
+            s.commit()
+            s.refresh(habit)
+            return habit
+
+    def list_active(self, user_id: int) -> List[Habit]:
+        with Session(self.engine) as s:
+            return list(s.scalars(select(Habit).where(Habit.user_id == user_id, Habit.active == True)))
+
+    def get_by_id(self, user_id: int, habit_id: int) -> Optional[Habit]:
+        with Session(self.engine) as s:
+            return s.scalar(select(Habit).where(Habit.user_id == user_id, Habit.id == habit_id))
+
+    def log_completion(self, user_id: int, habit_id: int) -> HabitLog:
+        with Session(self.engine) as s:
+            log = HabitLog(user_id=user_id, habit_id=habit_id)
+            s.add(log)
+            s.commit()
+            s.refresh(log)
+            return log
+
+    def completions_this_period(self, user_id: int, habit_id: int, frequency: HabitFrequency) -> int:
+        import pytz
+        from datetime import timedelta
+        tz = pytz.timezone(config.TIMEZONE)
+        now_local = datetime.now(tz)
+        if frequency == HabitFrequency.daily:
+            start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif frequency == HabitFrequency.weekly:
+            start_local = (now_local - timedelta(days=now_local.weekday())).replace(
+                hour=0, minute=0, second=0, microsecond=0)
+        else:  # monthly
+            start_local = now_local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        start_utc = start_local.astimezone(pytz.utc).replace(tzinfo=None)
+        with Session(self.engine) as s:
+            from sqlalchemy import func
+            return s.scalar(
+                select(func.count(HabitLog.id)).where(
+                    HabitLog.user_id == user_id,
+                    HabitLog.habit_id == habit_id,
+                    HabitLog.logged_at >= start_utc,
+                )
+            ) or 0
+
+    def deactivate(self, user_id: int, habit_id: int) -> None:
+        from sqlalchemy import update as sa_update
+        with Session(self.engine) as s:
+            s.execute(sa_update(Habit).where(Habit.user_id == user_id, Habit.id == habit_id).values(active=False))
             s.commit()
 
 
