@@ -48,12 +48,9 @@ def habits_section(habit_repo: HabitRepo, user_id: int) -> str:
     for h in habits:
         count = habit_repo.completions_this_period(user_id, h.id, h.frequency)
         period = _period_label(h.frequency)
+        status = f"{count}/{h.target_count} {period}"
         if count >= h.target_count:
-            status = "✅ done"
-        elif h.target_count == 1:
-            status = f"0/1 {period}"
-        else:
-            status = f"{count}/{h.target_count} {period}"
+            status = "✅ " + status
         lines.append(f"· \\[{h.id}\\] {escape_md(h.title)} — {status}")
     return "\n".join(lines)
 
@@ -294,9 +291,8 @@ def get_habit_log_buttons(habit_repo: HabitRepo, user_id: int) -> list:
     rows = []
     for h in habit_repo.list_active(user_id):
         count = habit_repo.completions_this_period(user_id, h.id, h.frequency)
-        if count < h.target_count:
-            label = h.title if len(h.title) <= 22 else h.title[:20] + "…"
-            rows.append([InlineKeyboardButton(f"📝 {label}", callback_data=f"log_habit_{h.id}")])
+        label = h.title if len(h.title) <= 22 else h.title[:20] + "…"
+        rows.append([InlineKeyboardButton(f"📝 {label}", callback_data=f"log_habit_{h.id}")])
     return rows
 
 
