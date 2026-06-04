@@ -13,7 +13,7 @@ from apscheduler.triggers.cron import CronTrigger
 import pytz
 
 import config
-from db.repository import TaskRepo, ProjectRepo, UserRepo
+from db.repository import TaskRepo, ProjectRepo, UserRepo, HabitRepo
 from bot.messages import morning_digest, evening_recap, weekly_overview, monthly_overview, get_morning_digest_buttons
 
 logger = logging.getLogger(__name__)
@@ -27,9 +27,10 @@ async def job_morning_digest(bot, engine):
         user_repo = UserRepo(engine)
         task_repo = TaskRepo(engine)
         project_repo = ProjectRepo(engine)
+        habit_repo = HabitRepo(engine)
         for user in user_repo.get_all_users():
-            text = morning_digest(task_repo, project_repo, user.id)
-            buttons = get_morning_digest_buttons(task_repo, project_repo, user.id)
+            text = morning_digest(task_repo, project_repo, user.id, habit_repo=habit_repo)
+            buttons = get_morning_digest_buttons(task_repo, project_repo, user.id, habit_repo=habit_repo)
             await bot.send_message(
                 chat_id=user.telegram_chat_id,
                 text=text,

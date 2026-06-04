@@ -6,8 +6,8 @@ from datetime import date, timedelta
 from typing import List
 
 import config
-from db.models import Task, Project, TaskStatus
-from db.repository import TaskRepo, ProjectRepo
+from db.models import Task, Project, TaskStatus, HabitFrequency
+from db.repository import TaskRepo, ProjectRepo, HabitRepo
 from utils.format import escape_md
 
 
@@ -35,7 +35,31 @@ def is_exam(title: str) -> bool:
     return any(kw in t for kw in keywords)
 
 
-def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int) -> str:
+def _period_label(frequency: HabitFrequency) -> str:
+    return {"daily": "today", "weekly": "this week", "monthly": "this month"}[frequency.value]
+
+
+def habits_section(habit_repo: HabitRepo, user_id: int) -> str:
+    """Return formatted habits block (empty string if no active habits)."""
+    habits = habit_repo.list_active(user_id)
+    if not habits:
+        return ""
+    lines = ["🔵 *Habits*"]
+    for h in habits:
+        count = habit_repo.completions_this_period(user_id, h.id, h.frequency)
+        period = _period_label(h.frequency)
+        if count >= h.target_count:
+            status = "✅ done"
+        elif h.target_count == 1:
+            status = f"0/1 {period}"
+        else:
+            status = f"{count}/{h.target_count} {period}"
+        lines.append(f"· \\[{h.id}\\] {escape_md(h.title)} — {status}")
+    return "\n".join(lines)
+
+
+def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int,
+                   habit_repo: HabitRepo = None) -> str:
     today = config.get_today()
 
     # Upcoming deadlines in the next 4 days (includes today)
@@ -52,8 +76,15 @@ def morning_digest(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int)
 
     lines = [f"● *Plan for {today.strftime('%A, %b %d')}*\n"]
 
+    if habit_repo:
+        habit_block = habits_section(habit_repo, user_id)
+        if habit_block:
+            lines.append(habit_block)
+            lines.append("")
+
     if not deadlines and not active_projects:
-        lines.append("_No tasks scheduled for the next few days._")
+        if not habit_repo or not habit_repo.list_active(user_id):
+            lines.append("_No tasks scheduled for the next few days._")
         return "\n".join(lines)
 
     if active_projects:
@@ -257,6 +288,18 @@ def exams_overview(task_repo: TaskRepo, user_id: int) -> str:
     return "\n".join(lines)
 
 
+def get_habit_log_buttons(habit_repo: HabitRepo, user_id: int) -> list:
+    """Return InlineKeyboard rows for habits that haven't hit their target this period."""
+    from telegram import InlineKeyboardButton
+    rows = []
+    for h in habit_repo.list_active(user_id):
+        count = habit_repo.completions_this_period(user_id, h.id, h.frequency)
+        if count < h.target_count:
+            label = h.title if len(h.title) <= 22 else h.title[:20] + "…"
+            rows.append([InlineKeyboardButton(f"📝 {label}", callback_data=f"log_habit_{h.id}")])
+    return rows
+
+
 def get_snooze_options_buttons(task_id: int):
     """Generate buttons for different snooze durations."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -271,7 +314,8 @@ def get_snooze_options_buttons(task_id: int):
     return InlineKeyboardMarkup(buttons)
 
 
-def get_morning_digest_buttons(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int):
+def get_morning_digest_buttons(task_repo: TaskRepo, project_repo: ProjectRepo, user_id: int,
+                               habit_repo: HabitRepo = None):
     """Generate an InlineKeyboardMarkup with 'Done' buttons for visible tasks."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     
@@ -295,7 +339,11 @@ def get_morning_digest_buttons(task_repo: TaskRepo, project_repo: ProjectRepo, u
     active_projects = project_repo.list_active(user_id)
     
     buttons = []
-    
+
+    # Habit log buttons (appear at top, matching digest order)
+    if habit_repo:
+        buttons.extend(get_habit_log_buttons(habit_repo, user_id))
+
     # Add project sub-tasks first (matches digest order)
     for p in active_projects:
         pending = [t for t in p.tasks if t.status == TaskStatus.pending and t.source == "ai_breakdown"]

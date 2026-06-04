@@ -14,6 +14,12 @@ class TaskStatus(enum.Enum):
     skipped = "skipped"
 
 
+class HabitFrequency(enum.Enum):
+    daily = "daily"
+    weekly = "weekly"
+    monthly = "monthly"
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -39,6 +45,7 @@ class User(Base):
     tasks: Mapped[List["Task"]] = relationship("Task", back_populates="user", cascade="all, delete-orphan")
     processed_sources: Mapped[List["ProcessedSource"]] = relationship("ProcessedSource", back_populates="user", cascade="all, delete-orphan")
     daily_plans: Mapped[List["DailyPlan"]] = relationship("DailyPlan", back_populates="user", cascade="all, delete-orphan")
+    habits: Mapped[List["Habit"]] = relationship("Habit", back_populates="user", cascade="all, delete-orphan")
 
 
 class Project(Base):
@@ -106,6 +113,36 @@ class DailyPlan(Base):
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     
     user: Mapped[Optional["User"]] = relationship("User", back_populates="daily_plans")
+
+
+class Habit(Base):
+    """A recurring habit with a frequency and a target completion count per period."""
+    __tablename__ = "habits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    frequency: Mapped[HabitFrequency] = mapped_column(SAEnum(HabitFrequency, native_enum=False, length=20), nullable=False)
+    target_count: Mapped[int] = mapped_column(Integer, default=1)
+    description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped[Optional["User"]] = relationship("User", back_populates="habits")
+    logs: Mapped[List["HabitLog"]] = relationship("HabitLog", back_populates="habit", cascade="all, delete-orphan")
+
+
+class HabitLog(Base):
+    """A single logged completion of a habit."""
+    __tablename__ = "habit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    habit_id: Mapped[int] = mapped_column(Integer, ForeignKey("habits.id"), nullable=False)
+    logged_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+
+    user: Mapped[Optional["User"]] = relationship("User")
+    habit: Mapped["Habit"] = relationship("Habit", back_populates="logs")
 
 
 def init_db(database_url: str):
