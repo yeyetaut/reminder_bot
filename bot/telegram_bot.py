@@ -203,6 +203,7 @@ async def cmd_set_canvas_url(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("✅ Canvas iCal URL saved.")
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     user = _get_user(update, context)
     if not user.google_credentials_encrypted:
         await update.message.reply_text(
@@ -213,15 +214,31 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    hr = _habit_repo(context)
+    has_habits = bool(hr.list_active(user.id))
+
+    habit_hint = (
+        "\n💡 <b>No habits set up yet.</b> Tap <b>Add a Habit</b> below to get started!"
+        if not has_habits else ""
+    )
+
+    buttons = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ Add a Habit", callback_data="quick_add_habit"),
+            InlineKeyboardButton("📋 My Habits", callback_data="quick_habits"),
+        ],
+        [InlineKeyboardButton("📅 Today's Plan", callback_data="quick_today")],
+    ])
+
     await update.message.reply_text(
         "👋 <b>Reminder Bot is running!</b>\n\n"
         "<b>Core Commands:</b>\n"
-        "/today — Today's digest & deadlines\n"
+        "/today — Today's digest &amp; deadlines\n"
         "/projects — Active projects overview\n"
         "/checklist — Generate an AI checklist for a project\n"
         "/exams — Upcoming exams\n\n"
         "<b>Habits:</b>\n"
-        "/habits — View all habits & progress\n"
+        "/habits — View all habits &amp; progress\n"
         "/add_habit — Add a daily, weekly, or monthly habit\n"
         "/log_habit &lt;id&gt; — Log one completion\n"
         "/delete_habit &lt;id&gt; — Remove a habit\n\n"
@@ -230,11 +247,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/monthly — Monthly calendar\n\n"
         "<b>Settings:</b>\n"
         "/login — Connect your Google account\n"
-        "/help — Setup instructions & FAQ\n"
+        "/help — Setup instructions &amp; FAQ\n"
         "/set_canvas_url &lt;url&gt; — Link your Canvas iCal feed\n"
         "/set_anthropic_key &lt;key&gt; — Set your Claude API key\n"
-        "/set_gemini_key &lt;key&gt; — Set your Gemini API key",
+        "/set_gemini_key &lt;key&gt; — Set your Gemini API key"
+        + habit_hint,
         parse_mode="HTML",
+        reply_markup=buttons,
     )
 
 
@@ -693,6 +712,46 @@ async def cmd_skip_estimate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @require_login
+async def handle_callback_quick_add_habit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """'Add a Habit' button on /start — launches the add_habit conversation."""
+    from bot.habit_conversations import start_add_habit
+    query = update.callback_query
+    await query.answer()
+    await start_add_habit(update, context)
+
+
+@require_login
+async def handle_callback_quick_habits(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """'My Habits' button on /start — shows the habits overview."""
+    from telegram import InlineKeyboardMarkup
+    user = _get_user(update, context)
+    query = update.callback_query
+    await query.answer()
+    hr = _habit_repo(context)
+    from bot.messages import habits_section, get_habit_log_buttons
+    section = habits_section(hr, user.id)
+    if not section:
+        await query.message.reply_text("No habits yet\\. Use /add\\_habit to add one\\.", parse_mode="Markdown")
+        return
+    rows = get_habit_log_buttons(hr, user.id)
+    markup = InlineKeyboardMarkup(rows) if rows else None
+    await query.message.reply_text(section, parse_mode="Markdown", reply_markup=markup)
+
+
+@require_login
+async def handle_callback_quick_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """'Today's Plan' button on /start — shows the morning digest."""
+    user = _get_user(update, context)
+    query = update.callback_query
+    await query.answer()
+    task_repo, project_repo, _ = _repos(context)
+    hr = _habit_repo(context)
+    text = morning_digest(task_repo, project_repo, user.id, habit_repo=hr)
+    buttons = get_morning_digest_buttons(task_repo, project_repo, user.id, habit_repo=hr)
+    await query.message.reply_text(text, parse_mode="Markdown", reply_markup=buttons)
+
+
+@require_login
 async def cmd_habits(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show all active habits with their current period progress and Log buttons."""
     from telegram import InlineKeyboardMarkup
@@ -815,6 +874,9 @@ def build_bot(engine, post_init=None, post_shutdown=None) -> Application:
     # Handle 'Done' buttons
     from telegram.ext import CallbackQueryHandler
     from bot.conversations import handle_callback_confirm_est, handle_callback_skip_est
+    app.add_handler(CallbackQueryHandler(handle_callback_quick_add_habit, pattern="^quick_add_habit$"))
+    app.add_handler(CallbackQueryHandler(handle_callback_quick_habits, pattern="^quick_habits$"))
+    app.add_handler(CallbackQueryHandler(handle_callback_quick_today, pattern="^quick_today$"))
     app.add_handler(CallbackQueryHandler(handle_callback_log_habit, pattern="^log_habit_"))
     app.add_handler(CallbackQueryHandler(handle_callback_done, pattern="^done_"))
     app.add_handler(CallbackQueryHandler(handle_callback_snooze_opt, pattern="^snooze_opt_"))
