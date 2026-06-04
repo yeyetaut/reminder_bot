@@ -139,7 +139,7 @@ class HabitLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     habit_id: Mapped[int] = mapped_column(Integer, ForeignKey("habits.id"), nullable=False)
-    logged_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    logged_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
     user: Mapped[Optional["User"]] = relationship("User")
     habit: Mapped["Habit"] = relationship("Habit", back_populates="logs")

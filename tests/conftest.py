@@ -1,5 +1,16 @@
+import os
+from cryptography.fernet import Fernet
+
+# Set required env vars before any project module is imported.
+# Use setdefault so a real .env (if present) takes precedence.
+os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
+os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test_bot_token_for_testing")
+os.environ.setdefault("TELEGRAM_CHAT_ID", "12345")
+os.environ.setdefault("WEB_URL", "http://localhost:8080")
+os.environ.setdefault("GOOGLE_CREDENTIALS_FILE", "/nonexistent/credentials.json")
+os.environ.setdefault("GOOGLE_TOKEN_FILE", "/nonexistent/token.json")
+
 import pytest
-from sqlalchemy import create_engine
 from db.models import Base, init_db
 
 @pytest.fixture
